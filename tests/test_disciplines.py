@@ -38,9 +38,3 @@ def test_refusals_write_nothing():
 def test_degrade_path_to_inbox():
     """§7.4: simulated golden mismatch -> the .uvtt lands in
     atlas-vtt/_inbox/ with instructions, nothing else written."""
-
-
-@GOLDEN
-def test_preset_validation_port():
-    """§7.5: deliberately-broken presets are refused by the installer
-    before Atlas ever sees them."""

@@ -4,9 +4,13 @@ The seam between [`dnd-campaign-generator`](../dnd-campaign-generator) (the
 canon core) and [Atlas VTT](https://github.com/atlas-vtt/atlas-vtt) (the
 at-the-table surface).
 
-**Status: spec-first — no code yet.** Everything below was verified against
+**Status: first build landed (2026-10-11).** The presets publisher
+(ticket 04 — `presets.py`, the `presets` subcommand, `packs/icrpg/`) is
+built; `scenes` (ticket 05) and `party` (ticket 06) are still spec-first.
+Everything below was verified against
 Atlas VTT v0.6.0 source on 2026-10-09; see "The Atlas contract" for what was
-checked and "Open questions" for the three spikes that precede code.
+checked and "Open questions" for the spikes that precede the remaining
+builds.
 **Tested against: Atlas VTT 0.6.0** (released 2026-10-05). This file is the
 repo's constitution: when code and README disagree, one of them is wrong and
 must be fixed the same day.
