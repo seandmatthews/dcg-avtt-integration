@@ -116,15 +116,27 @@ atlas-vtt/collections/<collectionId>/{scenes,encounters,players,characters,statb
   the adoption path). Our published image sits beside its record as
   `collections/<collectionId>/maps/<slug>.png`, stated by the record's
   `mapFilePath`.
-- **UNKONWN (spike 1):** whether a collection that exists only as a folder
-  is adopted, or whether `atlas-vtt/collections/<id>/collection.json` + the
-  library index must exist first (`AssetService.ts` mentions
-  `collection.json`, `library.json` as app-hidden files). Fallback costs 20
-  seconds: create the collection once in the Atlas UI and record its id in
-  the campaign's companion config. This repo must never write
-  `library.json` or `collection.json` — those are app internals (ruling;
-  same lesson as obsidian-integration §6, where mimicking app-private
-  storage killed the Fantasy Map investment).
+- **ANSWERED (spike 1, ticket 01):** folder-only adoption works — verified
+  live 2026-10-10 on both the 0.6.0 pin (release build) and the 0.7.1
+  install, Obsidian 1.14.4. A record at
+  `atlas-vtt/collections/<id>/maps/<stem>.json` whose `mapFilePath`
+  exists is adopted at plugin load with no `collection.json` and no
+  library index: Atlas derives the collection record, bootstraps
+  `library.json` (the first collection becomes the default), and indexes
+  the asset under `atlas-vtt/.atlas-data/`. So the publisher needs no
+  bootstrap step and no UI-recorded id — but it still names a stable
+  collection slug as its write target (`config.collection_id`, our
+  choice, e.g. the campaign slug). Two corollaries from the same
+  experiment: (a) **Atlas rewrites adopted record files in place** into
+  canonical form (recovered `id`, added `collection`, an `atlasRecord`
+  envelope) — so contract rule 3's refuse-on-diff must compare the
+  `atlasRecord` payload against our intended record, never raw bytes;
+  (b) a first run on a fresh vault also drops starter tokens into
+  `assets/` and `tokens/` — first-run side effects, not ours to mimic.
+  This repo still never writes `library.json` or `collection.json` —
+  those are app internals (ruling; same lesson as obsidian-integration
+  §6, where mimicking app-private storage killed the Fantasy Map
+  investment).
 
 ### 3.2 The `.atlasmap` scene file
 
@@ -419,10 +431,11 @@ formats does not by itself create obligations; vendoring Atlas source would
 
 ## 12. Open questions (the spike list, in build order)
 
-1. **Collection bootstrap** (§3.1): folder-only adoption vs UI-created
-   collection. First task — it decides whether `publish.py scenes` needs a
-   config step. Cost: one experiment in the Atlas UI with a hand-written
-   record.
+1. ~~**Collection bootstrap** (§3.1)~~ — answered by ticket 01
+   (2026-10-10, live on 0.6.0 and 0.7.1): folder-only adoption works;
+   no bootstrap step. `publish.py scenes` still takes its write-target
+   slug from config, and refuse-on-diff must compare Atlas's rewritten
+   record content, never raw bytes.
 2. ~~**Image path conventions** (§3.1)~~ — answered by ticket 02
    (2026-10-10, against 0.6.0): `assetImageFiles.ts` is the UI
    drag-in importer's helper, not the adoption path; keep
