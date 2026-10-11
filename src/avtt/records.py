@@ -8,8 +8,10 @@ Key facts the writers rely on (all verified against v0.6.0):
   path (``recoveredIds.ts``), so our stems (site slugs) are the identity.
 - A scene record references its content: ``data.mapPath`` points at the
   ``.atlasmap`` file.
-- A map record states its image: ``mapFilePath`` (+ optional
-  ``thumbnailPath``).
+- A map record states its image: ``mapFilePath``, the vault-relative
+  path of the image copied beside the record. We omit
+  ``thumbnailPath``: adoption ignores the field and Atlas's background
+  pass generates thumbnails for maps lacking one (ticket 02, v0.6.0).
 - Minimum shape: ``{id?, name, tags, collection, createdAt, modifiedAt,
   type: '<asset type>'}``; blank name falls back to the prettified stem.
 """
@@ -17,9 +19,18 @@ Key facts the writers rely on (all verified against v0.6.0):
 from __future__ import annotations
 
 
-def map_record(stem: str, map_file_path: str, *,
-               name: str = "", thumbnail_path: str = "") -> dict:
-    """A ``maps/<stem>.json`` payload (type ``map``)."""
+def map_record(stem: str, map_file_path: str, *, name: str = "") -> dict:
+    """A ``maps/<stem>.json`` payload (type ``map``).
+
+    ``mapFilePath`` convention (ticket 02, verified against v0.6.0):
+    ``map_file_path`` is the vault-relative path of the image copied
+    beside this record —
+    ``atlas-vtt/collections/<collectionId>/maps/<stem>.png`` — and the
+    image must be written before the record: adoption skips a map whose
+    stated image is missing. Our records carry no ``thumbnailPath``:
+    adoption drops the field, and ``AssetThumbnailService`` generates
+    thumbnails in the background for maps lacking one.
+    """
     raise NotImplementedError("lands with the scenes build (ticket 05); README §3.1")
 
 

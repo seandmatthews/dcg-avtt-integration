@@ -100,9 +100,22 @@ atlas-vtt/collections/<collectionId>/{scenes,encounters,players,characters,statb
   device, forever. Consequence: our stems (site slugs) are the identity.
 - A **scene record** carries `data: { mapPath: '<vault path to .atlasmap>' }`
   — the scene content file is referenced, not inlined.
-- A **map record** carries `mapFilePath` (the image) and optionally
-  `thumbnailPath`. The image can live anywhere in the vault; the record
-  states where.
+- A **map record** carries `mapFilePath` (the image); the image can live
+  anywhere in the vault and the record states where — but a map whose
+  stated image is missing is skipped at the vault check
+  (`assetAdoption.ts` `adoptMapJson`), so the image must exist before
+  its record is adopted.
+- **Thumbnails are Atlas's job** (spike 2, ticket 02, v0.6.0): adoption
+  ignores a `thumbnailPath` in the record JSON, and
+  `AssetThumbnailService` background-generates thumbnails for every map
+  lacking one (`atlas-vtt/assets/thumbnails/<name>-<digest>.webp`,
+  recorded back onto the asset). We never supply thumbnails and never
+  write into `atlas-vtt/assets/` — Atlas's own folder, where its UI
+  importer drops drag-in images as `<name>_<timestamp>_<random>.webp`
+  (`src/app/services/assetImageFiles.ts`, the importer's helper — not
+  the adoption path). Our published image sits beside its record as
+  `collections/<collectionId>/maps/<slug>.png`, stated by the record's
+  `mapFilePath`.
 - **UNKONWN (spike 1):** whether a collection that exists only as a folder
   is adopted, or whether `atlas-vtt/collections/<id>/collection.json` + the
   library index must exist first (`AssetService.ts` mentions
@@ -410,9 +423,12 @@ formats does not by itself create obligations; vendoring Atlas source would
    collection. First task — it decides whether `publish.py scenes` needs a
    config step. Cost: one experiment in the Atlas UI with a hand-written
    record.
-2. **Image path conventions** (§3.1): records carry explicit `mapFilePath`,
-   but where does Atlas's own importer put images (`assetImageFiles.ts`)?
-   Match it unless there's a reason not to.
+2. ~~**Image path conventions** (§3.1)~~ — answered by ticket 02
+   (2026-10-10, against 0.6.0): `assetImageFiles.ts` is the UI
+   drag-in importer's helper, not the adoption path; keep
+   `maps/<slug>.png` beside the record, and thumbnails are Atlas's job
+   (generated in the background, never supplied). Details in ticket 02's
+   Implementation notes.
 3. **Walls-crowding refusals**: dense generated maps may trip Atlas's
    `wallsCrowd` heuristic on *its* import path — irrelevant to ours (we
    write scenes directly), but the studio's manual-drag fallback hits it;
