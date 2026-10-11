@@ -37,13 +37,12 @@ def test_stub_is_stub():
     """A stub that returns instead of raising would be a silent lie."""
     with pytest.raises(NotImplementedError):
         uvtt.parse(None)
-    with pytest.raises(NotImplementedError):
-        presets.validate_preset({})
 
 
-def test_cli_admits_not_built(capsys):
-    """The skeleton CLI refuses loudly (rc 2), pointing at the queue."""
-    rc = publish.main(["some-campaign", "presets"])
+def test_cli_admits_scenes_not_built(capsys):
+    """The unbuilt publishers refuse loudly (rc 2), pointing at the queue.
+    (The presets pin moved to tests/test_presets.py when ticket 04 built it.)"""
+    rc = publish.main(["some-campaign", "scenes"])
     out = capsys.readouterr().out
     assert rc == 2
     assert "not built yet" in out

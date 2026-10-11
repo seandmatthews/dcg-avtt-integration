@@ -1,0 +1,31 @@
+{
+  "format": 1,
+  "id": "icrpg-house",
+  "name": "ICRPG (house)",
+  "rules": {
+    "gridDefaults": { "unitType": "feet", "unitDistance": 5, "measurementMode": "metric", "diagonalRule": "equidistant", "abstractRangeBands": [] },
+    "dice": { "defaultRoll": "1d20", "crit": "natural" },
+    "initiative": { "mode": "sides", "roll": "1d20", "firstSide": "players" },
+    "resources": [
+      { "key": "hearts", "name": "Hearts", "field": "hp", "direction": "drains", "color": "#e11d48", "defeatedWhenSpent": true, "visibleToPlayers": true }
+    ],
+    "conditions": [
+      { "id": "icrpg-blind", "name": "Blinded", "color": "#334155", "icon": "eye" },
+      { "id": "icrpg-burned", "name": "Burning", "color": "#f97316", "icon": "flame" },
+      { "id": "icrpg-dazed", "name": "Dazed", "color": "#7c3aed", "icon": "brain" },
+      { "id": "icrpg-entangled", "name": "Entangled", "color": "#78716c", "icon": "guard" },
+      { "id": "icrpg-feared", "name": "Feared", "color": "#991b1b", "icon": "terror" },
+      { "id": "icrpg-prone", "name": "Prone", "color": "#0ea5e9", "icon": "drop" }
+    ],
+    "widgets": [
+      { "id": "icrpg-alarm", "label": "Alarm", "icon": "stopwatch", "type": "timer", "value": 0, "duration": 60 },
+      { "id": "icrpg-rounds", "label": "Round", "icon": "hourglass", "type": "counter", "value": 1, "min": 1 },
+      { "id": "icrpg-progress", "label": "Progress", "icon": "clover", "type": "clock", "segments": 8, "value": 0, "showCount": true }
+    ],
+    "defaultWidgets": { "icrpg-alarm": true, "icrpg-rounds": true },
+    "lightPresets": [
+      { "id": "icrpg-torch", "name": "Torch", "unit": "feet", "bright": 40, "dim": 40, "color": "#ff9a3c", "animation": "torch", "kind": "torch", "sourceRadius": 2 },
+      { "id": "icrpg-lantern", "name": "Lantern", "unit": "feet", "bright": 30, "dim": 30, "color": "#ffd28a", "animation": "none", "kind": "lantern", "sourceRadius": 1.5 }
+    ]
+  }
+}
