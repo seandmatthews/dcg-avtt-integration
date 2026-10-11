@@ -300,6 +300,15 @@ uv run publish.py <campaign> presets [--pack icrpg]
     Shadowdark built in — consider using it"
 ```
 
+**The gate (read contract, pinned — ticket 48):** `--pack` applies only
+when the campaign's `campaign.yaml` declares a matching
+`system:`. Read as `str(value).strip().lower()` — the exact semantics of
+the core's `spine.campaign_system` (contract rule 4 forbids importing it,
+so this line IS the shared definition; neither side may drift). Missing or
+non-matching → refuse with "set `system: <system>` in
+`campaign.yaml`" — never write a pack into a campaign that did not ask
+for it. (Writing `campaign.yaml` itself stays forbidden: contract rule 1.)
+
 The pack's preset *knobs* — hearts as a token resource, alarm-clock **timer**
 widget, round **counter**, progress **clock**, d20 default roll + critical
 rule, initiative rule, conditions, torch/lantern light presets, vision
