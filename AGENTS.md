@@ -21,6 +21,24 @@ tickets stay in `docs/tickets/`. There is no tickets index — the status
 line in each file is the record. Format, numbering, and the template:
 `docs/tickets/CONVENTIONS.md`.
 
+## Workflows: the ticket forge and the implementer
+
+Two saved ZCode workflows automate the ticket loop (run them by name via
+the workflows hub / `CreateWorkflow` with `saved`):
+
+- `avtt-ticket-forge` — one idea in, a grounded + reviewed ticket out;
+  committed to main on the reviewer's sign-off.
+- `avtt-ticket-implementer` — one existing proposed/in-progress ticket,
+  implemented on its own worktree branch, gated (ruff + `run-tests.py
+  --all`), reviewed; on sign-off flipped to completed, moved to
+  `docs/tickets/archive/` in the same change, and merged `--no-ff` into
+  main with the gates re-run (auto-revert on red). Concurrency-safe:
+  per-run worktrees under `../dcg-avtt-wt/`; the shared main checkout is
+  serialized by a cross-run lock (`.zcode/tools/checkout-lock.ps1`).
+
+Both live in `.zcode/workflows/` (tracked) and are adapted from
+pigeon-simulator's `pigeon-ticket-forge` / `pigeon-ticket-pipeline`.
+
 ## The Atlas source: re-clone, never vendor
 
 The README's Atlas contract (§3) was read from a *reference clone* of

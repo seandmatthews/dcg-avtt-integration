@@ -5,8 +5,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-# session-local scratch (ZCode automations)
-.zcode/
+# session-local scratch (ZCode automations) — EXCEPT the durable workflow
+# infrastructure, which is tracked (the saved ticket workflows and the
+# cross-run checkout lock they depend on)
+.zcode/*
+!.zcode/tools/
+!.zcode/workflows/
+.zcode/tools/locks/
 
 # ephemeral Atlas reference clone — NEVER commit it: vendoring Atlas source
 # would change the AGPL picture (README §10). Re-clone at the pinned tag.

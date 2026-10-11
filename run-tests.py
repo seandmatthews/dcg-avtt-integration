@@ -54,7 +54,10 @@ def main():
     suites = list(FAST_SUITES)
     tier = "fast"
     if all_tiers:
-        golden = sorted((ROOT / "fixtures").glob("golden-*"))
+        # Ready only when a real captured fixture exists — the checked-in
+        # golden-<version>/ placeholder (just a README) must not select an
+        # empty integration suite (pytest exits 5 on zero collected tests).
+        golden = sorted((ROOT / "fixtures").glob("golden-*/sample.atlasmap"))
         if not golden:
             print("note: skipping the integration tier — no "
                   "fixtures/golden-<version>/ yet (capture procedure: "
