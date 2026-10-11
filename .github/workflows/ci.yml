@@ -35,7 +35,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install pyyaml pytest==9.1.1
 
-      - name: Lint (runtime-crash class: syntax errors, undefined names)
+      - name: "Lint (runtime-crash class: syntax errors, undefined names)"
         run: |
           pip install ruff
           ruff check src tests run-tests.py
