@@ -1,0 +1,54 @@
+# AGENTS.md
+
+Repo-wide working rules for agents working in `dcg-avtt-integration`.
+
+## The README is the constitution
+
+`README.md` is this repo's constitution: when code and README disagree,
+one of them is wrong and must be fixed the same day. Do not silently
+work around a README rule — change the rule in the same change that
+breaks it, with the reason stated.
+
+## Tickets
+
+Tickets live in `docs/tickets/` (finished ones in `docs/tickets/archive/`).
+Every ticket starts with one status line, `**Status:**` followed by
+exactly one of: `proposed`, `in-progress`, `superseded`, `completed`,
+`abandoned` (plus a short note — dates, commit refs). When a ticket's
+status becomes `superseded`, `completed`, or `abandoned`, move it into
+`docs/tickets/archive/` in the same change; `proposed` and `in-progress`
+tickets stay in `docs/tickets/`. There is no tickets index — the status
+line in each file is the record. Format, numbering, and the template:
+`docs/tickets/CONVENTIONS.md`.
+
+## The Atlas source: re-clone, never vendor
+
+The README's Atlas contract (§3) was read from a *reference clone* of
+Atlas VTT at the pinned tag (see the pinned-release table, README §7).
+That clone is ephemeral — before trusting any line that cites Atlas
+source, re-clone and re-check the tag:
+
+    git clone --branch <pinned-tag> https://github.com/atlas-vtt/atlas-vtt "$TEMP/atlas-vtt"
+
+Never commit, vendor, or copy Atlas source into this repo: `scene.py`
+and the preset validator are ports (derivative works — README §10), but
+vendored source would change the licensing picture and the churn
+procedure (§8). Cite file paths; do not carry code over.
+
+## Subprocess discipline
+
+List-form args, explicit `cwd`, never `shell=True` — a rule kept from
+the campaign-generator family (their parent path contained `&`).
+
+## No long-running processes
+
+This repo is a prep-time CLI (README §9: no server, no watcher daemon,
+no runtime at the table). There is nothing to leave running — so if you
+started any process while working here (a test server, a watcher), kill
+it before ending the session and verify the port/process is gone.
+
+## Windows-first
+
+Development happens on Windows (the campaign generator's home); the CI
+matrix keeps an ubuntu leg for portability, but Windows behavior wins
+disputes. Paths in tests via `pathlib`; no hardcoded `/tmp`.

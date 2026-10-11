@@ -1,0 +1,13 @@
+# uv / python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# session-local scratch (ZCode automations)
+.zcode/
+
+# ephemeral Atlas reference clone — NEVER commit it: vendoring Atlas source
+# would change the AGPL picture (README §10). Re-clone at the pinned tag.
+atlas-vtt/

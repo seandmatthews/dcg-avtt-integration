@@ -1,0 +1,44 @@
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  fast-tier:
+    # The fast test tier: the smoke suite + the skip-marked discipline
+    # names. The integration tier (golden-file tests) needs the
+    # human-captured fixtures/golden-<version>/ and stays local.
+    #
+    # Matrix: this is a Windows-first Python repo (the campaign generator
+    # it serves runs on Windows; path handling must be proven there), so
+    # at least one Windows leg must run.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.10", "3.11"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install test dependencies (pinned)
+        # pytest matches the uv.lock dev group (keep in sync when the
+        # lock moves) — a floating install could go green on a
+        # combination never tested locally.
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml pytest==9.1.1
+
+      - name: Lint (runtime-crash class: syntax errors, undefined names)
+        run: |
+          pip install ruff
+          ruff check src tests run-tests.py
+
+      - name: Fast tier
+        run: python run-tests.py
