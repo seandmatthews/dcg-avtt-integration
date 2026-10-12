@@ -37,16 +37,12 @@ def test_public_surface_exists(entry):
     assert hasattr(module, name), f"{module.__name__}.{name} missing"
 
 
-def test_stub_is_stub():
-    """A stub that returns instead of raising would be a silent lie."""
-    with pytest.raises(NotImplementedError):
-        uvtt.parse(None)
-
-
-def test_cli_admits_scenes_not_built(capsys):
+def test_cli_admits_party_not_built(capsys):
     """The unbuilt publishers refuse loudly (rc 2), pointing at the queue.
-    (The presets pin moved to tests/test_presets.py when ticket 04 built it.)"""
-    rc = publish.main(["some-campaign", "scenes"])
+    (The presets pin moved to tests/test_presets.py when ticket 04 built
+    it; the scenes pin moved to tests/test_scenes.py at ticket 05. What
+    is still spec-first — party, ticket 06 — keeps the pin here.)"""
+    rc = publish.main(["some-campaign", "party"])
     out = capsys.readouterr().out
     assert rc == 2
     assert "not built yet" in out

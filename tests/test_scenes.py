@@ -1,0 +1,826 @@
+"""Ticket 05's pins: the scenes publisher, the uvttToScene port, and the
+testing disciplines of README §7 that land with it (1–4; discipline 5
+lives in tests/test_presets.py).
+
+The golden-file test (discipline 1) additionally needs a fixture only a
+human can capture — import ``fixtures/sample.uvtt`` in the Atlas UI at
+the pinned version and commit the result under
+``fixtures/golden-<version>/`` (fixtures/README.md); until then it
+skips, as its placeholder did in the deleted tests/test_disciplines.py.
+"""
+
+from __future__ import annotations
+
+import base64
+import json
+import os
+import struct
+import zlib
+from pathlib import Path
+
+import pytest
+
+from avtt import _version, config, image_headers, publish, records, scene, uvtt
+
+ROOT = Path(__file__).resolve().parents[1]
+FIXTURES = ROOT / "fixtures"
+GOLDEN = FIXTURES / f"golden-{_version.ATLAS_PIN}" / "sample.atlasmap"
+GOLDEN_LIT = FIXTURES / f"golden-{_version.ATLAS_PIN}" / "sample-lit.atlasmap"
+
+SAMPLE = FIXTURES / "sample.uvtt"
+
+
+# --- helpers -----------------------------------------------------------------
+
+
+def sample_png_bytes() -> bytes:
+    """The image inside the sample fixtures — the site PNG the campaign
+    fixture needs (the generator writes both from one render)."""
+    raw = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    return base64.b64decode(raw["image"])
+
+
+def sample_doc() -> dict:
+    """The sample fixture's JSON with the image swapped for a fresh PNG
+    (variants reuse the design and change one thing)."""
+    doc = json.loads(SAMPLE.read_text(encoding="utf-8"))
+    doc["image"] = base64.b64encode(png(64, 32)).decode("ascii")
+    return doc
+
+
+def png(width: int, height: int, *, header_only: bool = False) -> bytes:
+    """A minimal valid 8-bit RGBA PNG with deterministic pixels. With
+    ``header_only`` the IDAT is left out — enough header for the
+    dimension reader, not decodable (used for the oversized-image
+    refusal, which reads the header only)."""
+
+    def chunk(kind: bytes, payload: bytes) -> bytes:
+        return (struct.pack(">I", len(payload)) + kind + payload
+                + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF))
+
+    data = (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)))
+    if header_only:
+        return data
+    rows = b"".join(b"\x00" + bytes((x * 7 + y * 11) % 256
+                                    for x in range(width)
+                                    for _ in range(4))
+                    for y in range(height))
+    return data + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
+
+
+def write_uvtt(path: Path, doc) -> Path:
+    """Write a ``.uvtt``; ``doc`` may be raw text (for malformed files)."""
+    if isinstance(doc, str):
+        path.write_text(doc, encoding="utf-8")
+    else:
+        path.write_text(json.dumps(doc), encoding="utf-8")
+    return path
+
+
+def variant_doc(**changes) -> dict:
+    """The sample design with one change applied (deep-merged one level)."""
+    doc = sample_doc()
+    for key, value in changes.items():
+        if isinstance(value, dict) and isinstance(doc.get(key), dict):
+            doc[key].update(value)
+        else:
+            doc[key] = value
+    return doc
+
+
+def make_campaign(tmp_path: Path, *, manifest: str | None = None,
+                  doc=None, avtt_yaml: str | None = None,
+                  note_text: str = "Site briefing from the core.\n",
+                  slug: str = "demo") -> Path:
+    """A campaign the scenes publisher accepts: campaign.yaml, avtt.yaml,
+    and the complete site triple under maps/sites/<slug>/."""
+    tmp_path = Path(tmp_path)
+    (tmp_path / "campaign.yaml").write_text("system: icrpg\n", encoding="utf-8")
+    (tmp_path / "avtt.yaml").write_text(
+        avtt_yaml if avtt_yaml is not None else "collection: demo\n",
+        encoding="utf-8")
+    site = tmp_path / "maps" / "sites" / slug
+    site.mkdir(parents=True)
+    (site / f"{slug}.png").write_bytes(sample_png_bytes())
+    write_uvtt(site / f"{slug}.uvtt", sample_doc() if doc is None else doc)
+    (site / f"{slug}.md").write_text(note_text, encoding="utf-8")
+    if manifest is not None:
+        (tmp_path / ".obsidian" / "plugins" / "atlas-vtt").mkdir(parents=True)
+        (tmp_path / ".obsidian" / "plugins" / "atlas-vtt" / "manifest.json").write_text(
+            json.dumps({"id": "atlas-vtt", "name": "Atlas VTT", "version": manifest}),
+            encoding="utf-8")
+    return tmp_path
+
+
+def collections_dir(campaign: Path) -> Path:
+    return Path(campaign) / "atlas-vtt" / "collections" / "demo"
+
+
+def parse_sample() -> uvtt.UvttDocument:
+    return uvtt.parse(SAMPLE)
+
+
+def convert_sample(document: uvtt.UvttDocument | None = None) -> dict:
+    document = document or parse_sample()
+    size = image_headers.dimensions_of_bytes(document.image_bytes)
+    cell = scene.checked_cell_size(document.size, *size)
+    farthest = scene.max_light_range(5.0, cell)
+    return scene.convert(document, size, 5.0, farthest)
+
+
+# --- the port, rule by rule (README §3.3) ------------------------------------
+
+
+def test_image_headers_reads_png_jpeg_webp(tmp_path):
+    (tmp_path / "a.png").write_bytes(png(64, 32))
+    assert image_headers.pixel_dimensions(tmp_path / "a.png") == (64, 32)
+
+    body = (b"\x30\x01\x00" + b"\x9d\x01\x2a"          # frame tag + sync code
+            + struct.pack("<HH", 64, 32))              # W at byte 26, H at 28
+    webp = (b"RIFF" + struct.pack("<I", 4 + 8 + len(body)) + b"WEBP"
+            + b"VP8 " + struct.pack("<I", len(body)) + body)
+    (tmp_path / "b.webp").write_bytes(webp)
+    assert image_headers.pixel_dimensions(tmp_path / "b.webp") == (64, 32)
+
+    jpeg = (b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 16)   # APP0, 16 incl. its length
+            + b"JFIF\0" + b"\x01\x02" + b"\x00"
+            + struct.pack(">HH", 1, 1) + b"\x00\x00"
+            + b"\xff\xc0" + struct.pack(">H", 17) + b"\x08"     # SOF0
+            + struct.pack(">HH", 32, 64) + b"\x01\x11\x00")
+    (tmp_path / "c.jpg").write_bytes(jpeg)
+    assert image_headers.pixel_dimensions(tmp_path / "c.jpg") == (64, 32)
+
+    (tmp_path / "d.png").write_bytes(b"\x89PNG\r\n\x1a\ntrunc")
+    with pytest.raises(ValueError, match="does not begin"):
+        image_headers.pixel_dimensions(tmp_path / "d.png")
+    (tmp_path / "e.bin").write_bytes(b"not an image at all")
+    with pytest.raises(ValueError, match="does not begin"):
+        image_headers.pixel_dimensions(tmp_path / "e.bin")
+
+
+def test_dimensions_of_bytes_is_the_uvtt_pipeline_reader():
+    assert image_headers.dimensions_of_bytes(parse_sample().image_bytes) == (64, 32)
+    assert image_headers.dimensions_of_bytes(b"GIF89a") is None
+    assert image_headers.dimensions_of_bytes(png(16385, 16384, header_only=True)) \
+        == (16385, 16384)
+
+
+def test_cell_size_math_with_side_tolerance():
+    from avtt.uvtt import UvttPoint
+    assert scene.cell_size_for(UvttPoint(4, 2), 64, 32) == 16.0
+    # exporters round each side to whole pixels: ±2 px on the height
+    assert scene.cell_size_for(UvttPoint(4, 2), 64, 30) == 16.0
+    assert scene.cell_size_for(UvttPoint(4, 2), 64, 34) == 16.0
+    assert scene.cell_size_for(UvttPoint(4, 2), 64, 29) is None
+    assert scene.cell_size_for(UvttPoint(4, 2), 64, 35) is None
+    assert scene.cell_size_for(UvttPoint(4, 3), 64, 32) is None  # the nonsquare fixture
+
+
+def test_sample_conversion_pins_ids_chains_counts():
+    """The deterministic id scheme and the skip counters, on the fixture the
+    golden capture imports (fixtures/README.md's table)."""
+    conversion = convert_sample()
+    assert list(conversion["walls"]) == [
+        "wall_uvtt_1", "wall_uvtt_2", "wall_uvtt_3", "wall_uvtt_4", "wall_uvtt_5"]
+    assert [w.get("chainId") for w in conversion["walls"].values()] == [
+        "chain_uvtt_1", "chain_uvtt_1", "chain_uvtt_2", "chain_uvtt_4", None]
+    assert [w["type"] for w in conversion["walls"].values()] == \
+        ["solid", "solid", "solid", "solid", "door"]
+    assert conversion["walls"]["wall_uvtt_5"]["closed"] is True
+    assert list(conversion["lights"]) == ["light_uvtt_1"]
+    assert conversion["counts"] == {"walls": 4, "doors": 1, "lights": 1}
+    assert conversion["skipped"] == {"outside": 3, "unlit": 1, "windows": 1}
+    # the importer counts a zero-range light (and the window) as on-image
+    # before dropping them: 4 walls + 2 portals + 2 lights
+    assert conversion["on_image"] == 8
+
+
+def test_convert_maps_cells_to_world_pixels_with_origin():
+    conversion = convert_sample()
+    # origin (1,1), cellSize 16: cell (0,0) of the file is world (0,0)
+    door = conversion["walls"]["wall_uvtt_5"]
+    assert door["p1"] == {"x": 0.0, "y": 0.0}
+    assert door["p2"] == {"x": 16.0, "y": 0.0}
+    # clipping keeps shared endpoints exactly (line 1's two segments)
+    assert conversion["walls"]["wall_uvtt_1"]["p2"] \
+        == conversion["walls"]["wall_uvtt_2"]["p1"]
+    # the edge-crossing line is cut at the placeable rect (cell 5 = one past the edge)
+    clipped = conversion["walls"]["wall_uvtt_3"]
+    assert clipped["p1"] == {"x": -16.0, "y": 0.0}
+    assert clipped["p2"] == {"x": 80.0, "y": 0.0}
+
+
+def test_light_math_cells_to_game_units_and_hidden_when_baked():
+    light = convert_sample()["lights"]["light_uvtt_1"]
+    # feet-based collection, 5 ft squares: range 2 cells = 10 units, bright half
+    assert light["emission"] == {"bright": 5, "dim": 10, "color": "#ff8800",
+                                 "intensity": 1.5, "animation": "none",
+                                 "kind": "custom"}
+    assert light["hidden"] is True  # baked lighting: the image shows the glow
+    assert light["x"] == 16 and light["y"] == 16
+
+
+def test_light_clamped_to_max_light_range(tmp_path):
+    raw = variant_doc(environment={"baked_lighting": False, "ambient_light": None},
+                      lights=[{"position": {"x": 2, "y": 2}, "range": 1_000_000,
+                               "intensity": 9, "color": "#ffffff"}])
+    conversion = convert_sample(uvtt.parse(write_uvtt(tmp_path / "big.uvtt", raw)))
+    light = conversion["lights"]["light_uvtt_1"]
+    # maxLightRange = floor(8192 / cellSize * unitDistance) = 2560 at cellSize 16
+    assert scene.max_light_range(5.0, 16.0) == 2560
+    assert light["emission"]["dim"] == 2560
+    assert light["emission"]["bright"] == 1280
+    assert light["emission"]["intensity"] == 2  # clamped to the 0–2 slider range
+    assert "hidden" not in light
+
+
+def test_ambient_rules(tmp_path):
+    # baked wins even when a color is named (the sample proves precedence)
+    assert convert_sample()["lighting"] == {"enabled": True, "ambient": 1}
+    # the lit variant takes the luma branch: Rec. 709 luma of #334455
+    conversion = convert_sample(uvtt.parse(FIXTURES / "sample-lit.uvtt"))
+    assert conversion["lighting"]["ambient"] == 0.26
+    assert list(conversion["lights"].values())[0].get("hidden") is None
+    # no ambient named at all: daylight
+    raw = variant_doc(environment={"baked_lighting": False, "ambient_light": None})
+    none_doc = convert_sample(uvtt.parse(write_uvtt(tmp_path / "none.uvtt", raw)))
+    assert none_doc["lighting"]["ambient"] == 1
+
+
+def test_grid_offset_normalized():
+    # -origin * cellSize is a whole-cell multiple, so the normalized offset is 0
+    grid = convert_sample()["grid"]
+    assert grid["size"] == 16.0
+    assert grid["offsetX"] == 0.0 and grid["offsetY"] == 0.0
+
+
+def test_dumps_is_deterministic_and_js_shaped():
+    envelope = scene.scene_file(convert_sample(), "atlas-vtt/collections/demo/maps/demo.png")
+    assert scene.dumps(envelope) == scene.dumps(envelope)
+    text = scene.dumps(envelope).decode("utf-8")
+    assert text.startswith('{\n  "state": {')  # two-space indent like JSON.stringify
+    assert not text.endswith("\n")             # no trailing newline
+    assert '"size": 16,' in text               # whole-number doubles print bare
+    assert '"intensity": 1.5' in text
+    parsed = json.loads(text)
+    assert parsed["state"]["schema"] == "atlas-vtt"
+    assert parsed["state"]["version"] == 4
+    assert parsed["version"] == 4
+
+
+def test_scene_file_envelope_fresh_collection_vs_grid_defaults():
+    conversion = convert_sample()
+    bare = scene.scene_file(conversion, None)
+    grid = bare["state"]["grid"]
+    assert grid["enabled"] is True and grid["type"] == "square" and grid["size"] == 16.0
+    assert "unitType" not in grid and "unitDistance" not in grid \
+        and "measurementType" not in grid  # a fresh collection never set gridDefaults
+    assert "autoDetect" not in grid  # the import drops it: the file states its grid
+    assert bare["state"]["tokenSettings"] == {
+        "showNameplates": False, "hiddenResources": ["stress"],
+        "showInstanceBadges": True, "tokenRingSize": 1,
+        "showHPBars": True, "showStressBars": False,
+    }
+    assert bare["state"]["objects"] == {
+        "tokens": {}, "fog": {}, "pins": {}, "texts": {}, "drawings": {},
+        "walls": conversion["walls"], "lights": conversion["lights"]}
+    assert bare["state"]["camera"] == {"x": 0, "y": 0, "scale": 1}
+    assert list(bare) == ["state", "version"]
+
+    fed = scene.scene_file(
+        conversion, None,
+        grid_defaults=config.GridDefaults("feet", 5.0, "metric"),
+        default_widgets={"hpBar": True, "stressBar": True})
+    grid = fed["state"]["grid"]
+    assert grid["unitType"] == "feet" and grid["unitDistance"] == 5.0
+    assert grid["measurementType"] == "units"
+    assert fed["state"]["tokenSettings"]["hiddenResources"] == []
+    abstract = scene.scene_file(
+        conversion, None,
+        grid_defaults=config.GridDefaults("units", 1.0, "abstract"))
+    assert abstract["state"]["grid"]["measurementType"] == "abstract"
+
+
+# --- records (README §3.1, tickets 01/02) -------------------------------------
+
+
+def test_record_shapes():
+    assert records.map_record("demo", "atlas-vtt/collections/demo/maps/demo.png") == {
+        "name": "demo", "tags": [], "type": "map",
+        "mapFilePath": "atlas-vtt/collections/demo/maps/demo.png"}
+    assert records.scene_record("demo", "atlas-vtt/collections/demo/scenes/demo.atlasmap") == {
+        "name": "demo", "tags": [], "type": "scene",
+        "mapPath": "atlas-vtt/collections/demo/scenes/demo.atlasmap"}
+    # ids are left for Atlas to recover; timestamps fall back to adoption time;
+    # collection comes from the folder — none of them is ours to write
+    for payload in (records.map_record("demo", "x.png"),
+                    records.scene_record("demo", "x.atlasmap")):
+        for field in ("id", "collection", "createdAt", "modifiedAt"):
+            assert field not in payload
+
+
+def test_record_matches_accepts_atlas_canonical_rewrite():
+    """Atlas rewrites adopted records in place (ticket 01): payload beside an
+    ``atlasRecord`` envelope, with Atlas-owned fields filled in. That form
+    still means what we intended — refuse-on-diff must accept it."""
+    intended = records.scene_record("demo", "atlas-vtt/collections/demo/scenes/demo.atlasmap")
+    assert records.matches(dict(intended), intended)
+    rewritten = {
+        "mapPath": intended["mapPath"], "name": "demo", "tags": [], "type": "scene",
+        "atlasRecord": {"format": 1, "id": "demo", "name": "demo", "tags": [],
+                        "collection": "demo", "createdAt": 1, "modifiedAt": 2,
+                        "type": "scene"},
+    }
+    assert records.matches(rewritten, intended)
+    # a rename in the UI is the DM's: refuse
+    renamed = json.loads(json.dumps(rewritten))
+    renamed["name"] = "Hand-renamed"
+    renamed["atlasRecord"]["name"] = "Hand-renamed"
+    assert not records.matches(renamed, intended)
+    # a different stated path is a different scene: refuse
+    moved = json.loads(json.dumps(rewritten))
+    moved["mapPath"] = "atlas-vtt/collections/demo/scenes/other.atlasmap"
+    assert not records.matches(moved, intended)
+
+    intended_map = records.map_record("demo", "atlas-vtt/collections/demo/maps/demo.png")
+    # Atlas's map rewrite carries type only in the envelope (legacyMapFields payload)
+    canonical_map = {
+        "id": "demo", "name": "demo",
+        "mapFilePath": "atlas-vtt/collections/demo/maps/demo.png",
+        "tags": [], "collection": "demo", "createdAt": 1, "modifiedAt": 2,
+        "atlasRecord": {"format": 1, "id": "demo", "name": "demo", "tags": [],
+                        "collection": "demo", "createdAt": 1, "modifiedAt": 2,
+                        "type": "map",
+                        "mapFilePath": "atlas-vtt/collections/demo/maps/demo.png"},
+    }
+    assert records.matches(canonical_map, intended_map)
+    relinked = json.loads(json.dumps(canonical_map))
+    relinked["mapFilePath"] = "atlas-vtt/assets/moved.webp"
+    relinked["atlasRecord"]["mapFilePath"] = "atlas-vtt/assets/moved.webp"
+    assert not records.matches(relinked, intended_map)
+
+
+# --- discipline 1: the golden file (needs the human capture) -------------------
+
+
+def _assert_structurally_equal(golden, ours, path="$", tolerance=1e-9):
+    """README §7.1: keys, types, id scheme, math within float tolerance.
+    Everything matches exactly except floats (compared within tolerance)
+    and the ``background`` path (capture-specific: the UI import renames
+    the image into ``assets/`` as a timestamped webp)."""
+    if isinstance(golden, dict):
+        assert isinstance(ours, dict), path
+        assert set(golden) == set(ours), f"{path}: keys differ: {set(golden) ^ set(ours)}"
+        for key in golden:
+            if key == "background":
+                assert isinstance(golden[key], str) and golden[key], path
+                assert isinstance(ours[key], str) and ours[key], path
+                continue
+            _assert_structurally_equal(golden[key], ours[key], f"{path}.{key}", tolerance)
+    elif isinstance(golden, list):
+        assert isinstance(ours, list) and len(golden) == len(ours), path
+        for index, (g, o) in enumerate(zip(golden, ours)):
+            _assert_structurally_equal(g, o, f"{path}[{index}]", tolerance)
+    elif isinstance(golden, bool) or golden is None:
+        assert golden is ours, f"{path}: {golden!r} != {ours!r}"
+    elif isinstance(golden, (int, float)):
+        assert isinstance(ours, (int, float)) and not isinstance(ours, bool), \
+            f"{path}: {ours!r} is not a number"
+        assert golden == pytest.approx(ours, abs=tolerance), f"{path}: {golden!r} != {ours!r}"
+    else:
+        assert golden == ours, f"{path}: {golden!r} != {ours!r}"
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not GOLDEN.is_file(),
+                    reason="needs fixtures/golden-%s/sample.atlasmap, captured by a "
+                           "human from the Atlas UI (fixtures/README.md)"
+                           % _version.ATLAS_PIN)
+def test_golden_file():
+    """§7.1: the port's output matches the captured .atlasmap structurally."""
+    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    envelope = scene.scene_file(convert_sample(),
+                                "atlas-vtt/collections/demo/maps/demo.png")
+    _assert_structurally_equal(golden, envelope)
+
+
+@pytest.mark.integration
+@pytest.mark.skipif(not GOLDEN_LIT.is_file(),
+                    reason="optional second capture (sample-lit.uvtt) not present")
+def test_golden_file_lit_variant():
+    """The luma branch against the real app, when the optional capture exists."""
+    golden = json.loads(GOLDEN_LIT.read_text(encoding="utf-8"))
+    envelope = scene.scene_file(convert_sample(uvtt.parse(FIXTURES / "sample-lit.uvtt")),
+                                "atlas-vtt/collections/demo/maps/demo.png")
+    _assert_structurally_equal(golden, envelope)
+
+
+# --- discipline 2: round-trip determinism --------------------------------------
+
+
+def test_round_trip_determinism(tmp_path, capsys):
+    """§7.2: same .uvtt twice -> byte-identical .atlasmap (unit and CLI)."""
+    first = scene.dumps(scene.scene_file(convert_sample(), "bg.png"))
+    second = scene.dumps(scene.scene_file(convert_sample(uvtt.parse(SAMPLE)), "bg.png"))
+    assert first == second
+
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    atlasmap = collections_dir(campaign) / "scenes" / "demo.atlasmap"
+    written = atlasmap.read_bytes()
+    assert written == scene.dumps(scene.scene_file(
+        convert_sample(), "atlas-vtt/collections/demo/maps/demo.png"))
+    before = os.stat(atlasmap).st_mtime_ns
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert "already matches — nothing written" in capsys.readouterr().out
+    assert atlasmap.read_bytes() == written
+    assert os.stat(atlasmap).st_mtime_ns == before, "the identical file was rewritten"
+
+
+# --- discipline 3: refusals write nothing --------------------------------------
+
+
+def _refusal_cases() -> list[tuple[str, object, str]]:
+    """(name, uvtt document/text, reason fragment) — every Atlas limit and
+    the field breaks the importer refuses, one per plain-words reason."""
+    oversized = sample_doc()  # header claims 16385×16384 (> 268,435,456 px), body truncated
+    oversized["image"] = base64.b64encode(png(16385, 16384, header_only=True)).decode("ascii")
+    tiny = variant_doc(image=base64.b64encode(png(32, 16)).decode("ascii"))  # cellSize 8 < 10
+    wall_hog = variant_doc(line_of_sight=[[{"x": 0, "y": 0}] + [{"x": 0, "y": 0}] * 20002])
+    light_hog = variant_doc(lights=[{"position": {"x": 1, "y": 1}, "range": 1,
+                                     "intensity": 1, "color": "#ffffff"}] * 2001)
+    bad_range = variant_doc(lights=[{"position": {"x": 1, "y": 1}, "range": -1,
+                                     "intensity": 1, "color": "#ffffff"}])
+    no_ends = variant_doc(portals=[{"bounds": [{"x": 1, "y": 1}], "closed": True}])
+    all_outside = variant_doc(line_of_sight=[[{"x": 50, "y": 50}, {"x": 60, "y": 50}]],
+                              objects_line_of_sight=[], portals=[], lights=[])
+    nonsquare = json.loads((FIXTURES / "sample-nonsquare.uvtt").read_text(encoding="utf-8"))
+    nonsquare["image"] = base64.b64encode(png(64, 32)).decode("ascii")
+    return [
+        ("not-json", "{nope", "not valid JSON"),
+        ("width-over-4096-cells",
+         variant_doc(resolution={"map_size": {"x": 4097, "y": 2}}), "out of range"),
+        ("width-not-a-number",
+         variant_doc(resolution={"map_size": {"x": "wide", "y": 2}}),
+         "missing or not a number"),
+        ("origin-not-a-position",
+         variant_doc(resolution={"map_size": {"x": 4, "y": 2},
+                                 "map_origin": "up and left"}),
+         "missing or not a position"),
+        ("over-20000-wall-segments", wall_hog, "more than 20,000 wall segments"),
+        ("over-2000-lights", light_hog, "more than 2,000 lights"),
+        ("light-range-negative", bad_range, "out of range"),
+        ("door-without-two-ends", no_ends, "does not have two ends"),
+        ("no-image", variant_doc(image=""), "holds no map image"),
+        ("image-reference", variant_doc(image="map.png"), "refers to its image"),
+        ("image-not-base64", variant_doc(image="!!!not-base64!!!"), "not valid base64"),
+        ("image-wrong-format",
+         variant_doc(image=base64.b64encode(b"GIF89a0102").decode("ascii")),
+         "not a PNG, WebP or JPEG"),
+        ("image-too-large", oversized, "too large to open"),
+        ("image-unreadable-header",
+         variant_doc(image=base64.b64encode(b"\xff\xd8\xfftrunc").decode("ascii")),
+         "could not be read"),
+        ("nonsquare-cells", nonsquare, "does not fit a map of 4 × 3 squares"),
+        ("grid-too-small", tiny, "too small for its grid"),
+        ("nothing-lies-on-image", all_outside,
+         "Nothing in the file lies on its map image"),
+    ]
+
+
+@pytest.mark.parametrize("name,doc,fragment", _refusal_cases(),
+                         ids=[case[0] for case in _refusal_cases()])
+def test_refusals_write_nothing(tmp_path, capsys, name, doc, fragment):
+    """§7.3: every limit produces its plain-words reason and the atlas-vtt/
+    tree is untouched."""
+    campaign = make_campaign(tmp_path, doc=doc, manifest=_version.ATLAS_PIN)
+    atlas = campaign / "atlas-vtt"
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
+    out = capsys.readouterr().out
+    assert fragment in out, (name, out)
+    assert not atlas.exists(), f"{name}: the refusal wrote into atlas-vtt/"
+
+
+def test_refusal_of_a_150mb_file_writes_nothing(tmp_path, capsys):
+    """The file-size limit fires on the byte count, before any parse."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    uvtt_path = campaign / "maps" / "sites" / "demo" / "demo.uvtt"
+    with open(uvtt_path, "wb") as handle:
+        handle.write(b"{")
+        handle.truncate(uvtt.FILE_BYTES_LIMIT + 1)
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
+    out = capsys.readouterr().out
+    assert "larger than 150 MB" in out
+    assert not (campaign / "atlas-vtt").exists()
+
+
+def test_incomplete_site_is_refused(tmp_path, capsys):
+    """The generator emits png + uvtt + md together; a missing file is
+    reported, not guessed around."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    (campaign / "maps" / "sites" / "demo" / "demo.png").unlink()
+    assert publish.main([str(campaign), "scenes"]) == 2
+    out = capsys.readouterr().out
+    assert "incomplete" in out and "demo.png" in out
+    assert not (campaign / "atlas-vtt").exists()
+
+
+def test_unknown_site_is_refused(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes", "--site", "nosuch"]) == 2
+    assert "no site 'nosuch'" in capsys.readouterr().out
+
+
+def test_missing_config_is_refused_on_the_pinned_vault(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    (campaign / "avtt.yaml").unlink()
+    assert publish.main([str(campaign), "scenes"]) == 2
+    assert "avtt.yaml" in capsys.readouterr().out
+    assert not (campaign / "atlas-vtt").exists()
+
+
+@pytest.mark.parametrize("yaml_text,fragment", [
+    ("collection: ../escape\n", "stable slug"),
+    ("collection: ''\n", "stable slug"),
+    ("collection: demo\ngrid:\n  unit_type: leagues\n  unit_distance: 5\n"
+     "  measurement_mode: metric\n", "unit_type"),
+    ("collection: demo\ngrid:\n  unit_type: feet\n  unit_distance: 0\n"
+     "  measurement_mode: metric\n", "unit_distance"),
+    ("collection: demo\ngrid:\n  unit_type: feet\n  unit_distance: 5\n"
+     "  measurement_mode: imperial\n", "measurement_mode"),
+    ("collection: demo\ndefault_widgets: [hpBar]\n", "default_widgets"),
+])
+def test_bad_config_values_are_refused(tmp_path, capsys, yaml_text, fragment):
+    campaign = make_campaign(tmp_path, avtt_yaml=yaml_text, manifest=_version.ATLAS_PIN)
+    with pytest.raises(config.ConfigRefused, match=fragment.replace("(", "\\(")):
+        config.load(campaign)
+    assert publish.main([str(campaign), "scenes"]) == 2
+    assert fragment in capsys.readouterr().out
+    assert not (campaign / "atlas-vtt").exists()
+
+
+# --- discipline 4: the degrade path ---------------------------------------------
+
+
+def test_degrade_path_to_inbox(tmp_path, capsys):
+    """§7.4: golden mismatch (a vault not running the pinned Atlas) -> the
+    .uvtt lands in atlas-vtt/_inbox/ with instructions, nothing else written."""
+    campaign = make_campaign(tmp_path, manifest="9.9.9")
+    note_before = (campaign / "maps" / "sites" / "demo" / "demo.md").read_bytes()
+    assert publish.main([str(campaign), "scenes"]) == 0
+    out = capsys.readouterr().out
+    assert f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected=9.9.9" in out
+    assert "writing no .atlasmap" in out
+    assert "drag it into Atlas" in out and "walls, doors and lights come along" in out
+    inbox_copy = campaign / "atlas-vtt" / "_inbox" / "demo.uvtt"
+    assert inbox_copy.read_bytes() == (campaign / "maps" / "sites" / "demo"
+                                       / "demo.uvtt").read_bytes()
+    # _inbox/ only: no collections, no records, no scene files, no note edit
+    assert list((campaign / "atlas-vtt").iterdir()) == [campaign / "atlas-vtt" / "_inbox"]
+    assert (campaign / "maps" / "sites" / "demo" / "demo.md").read_bytes() == note_before
+
+
+def test_degrade_is_unknown_detection_too(tmp_path, capsys):
+    campaign = make_campaign(tmp_path)  # no .obsidian anywhere
+    assert publish.main([str(campaign), "scenes"]) == 0
+    out = capsys.readouterr().out
+    assert f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected=unknown" in out
+    assert (campaign / "atlas-vtt" / "_inbox" / "demo.uvtt").is_file()
+
+
+def test_degrade_is_idempotent_and_refuses_on_diff(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest="0.7.1")
+    assert publish.main([str(campaign), "scenes"]) == 0
+    inbox_copy = campaign / "atlas-vtt" / "_inbox" / "demo.uvtt"
+    before = os.stat(inbox_copy).st_mtime_ns
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert "already in the inbox" in capsys.readouterr().out
+    assert os.stat(inbox_copy).st_mtime_ns == before
+
+    inbox_copy.write_bytes(b"different bytes entirely")  # a hand-edited inbox copy
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
+    assert "exists and differs" in capsys.readouterr().out
+    assert inbox_copy.read_bytes() == b"different bytes entirely"
+
+
+def test_degrade_refuses_an_invalid_uvtt_without_copying(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest="0.7.1",
+                             doc=variant_doc(image=""))
+    assert publish.main([str(campaign), "scenes"]) == 2
+    assert "holds no map image" in capsys.readouterr().out
+    assert not (campaign / "atlas-vtt").exists(), "the degrade copied an invalid file"
+
+
+def test_degrade_dry_run_writes_nothing(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest="0.7.1")
+    assert publish.main([str(campaign), "scenes", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "_inbox" in out and "would write it" in out
+    assert not (campaign / "atlas-vtt").exists()
+
+
+# --- --dry-run on the pinned path (acceptance criterion 5) -----------------------
+
+
+def test_dry_run_prints_plan_and_writes_nothing(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes", "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "dry run — file plan for site 'demo'" in out
+    for name in ("demo.png", "demo.json", "demo.atlasmap", "companion-note link"):
+        assert name in out, name
+    assert out.count("maps") >= 2 and out.count("scenes") >= 2  # both records' folders
+    assert "would write it" in out
+    assert not (campaign / "atlas-vtt").exists(), "the dry run wrote files"
+
+
+def test_dry_run_reports_the_first_divergence(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    atlasmap = collections_dir(campaign) / "scenes" / "demo.atlasmap"
+    atlasmap.parent.mkdir(parents=True)
+    atlasmap.write_text('{"state": {"schema": "hand-tuned"}}', encoding="utf-8")
+    before = atlasmap.read_bytes()
+    assert publish.main([str(campaign), "scenes", "--dry-run"]) == 2
+    out = capsys.readouterr().out
+    assert "would REFUSE" in out and "exists and differs" in out and "--force" in out
+    assert atlasmap.read_bytes() == before
+    assert not (collections_dir(campaign) / "maps" / "demo.png").exists()
+
+
+def test_dry_run_force_points_at_the_v2_sibling(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    atlasmap = collections_dir(campaign) / "scenes" / "demo.atlasmap"
+    atlasmap.parent.mkdir(parents=True)
+    atlasmap.write_text('{"state": {"schema": "hand-tuned"}}', encoding="utf-8")
+    assert publish.main([str(campaign), "scenes", "--dry-run", "--force"]) == 0
+    out = capsys.readouterr().out
+    assert "demo-v2" in out
+    assert not (collections_dir(campaign) / "scenes" / "demo-v2.atlasmap").exists()
+
+
+# --- the companion note (acceptance criterion 6, contract rule 1) -----------------
+
+
+def test_companion_note_append_is_idempotent(tmp_path, capsys):
+    original = "Site briefing from the core.\nSecond line.\n"
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_text=original)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    after_first = note.read_text(encoding="utf-8")
+    assert after_first == original + "![[demo.atlasmap]]\n"
+
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert "already matches" in capsys.readouterr().out
+    assert note.read_text(encoding="utf-8") == after_first, "republish rewrote the note"
+
+
+def test_companion_note_preserves_content_without_trailing_newline(tmp_path):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_text="no trailing newline")
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    assert note.read_text(encoding="utf-8") == "no trailing newline\n![[demo.atlasmap]]\n"
+
+
+@pytest.mark.parametrize("note_text", [
+    "See [[demo.atlasmap]] here.\n",
+    "Embedded: ![[demo.atlasmap|the keep]]\n",
+    "Snapshot link [[demo.atlasmap#gate]]\n",
+])
+def test_companion_note_recognizes_any_link_shape(tmp_path, note_text):
+    """A note that already links the scene (plain, alias, embed, subpath)
+    gains no second line."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_text=note_text)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    assert note.read_text(encoding="utf-8") == note_text
+
+
+# --- the write path end to end ----------------------------------------------------
+
+
+def test_publish_writes_the_plan_in_order(tmp_path):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    collections = collections_dir(campaign)
+    assert (collections / "maps" / "demo.png").read_bytes() == sample_png_bytes()
+    atlasmap = json.loads((collections / "scenes" / "demo.atlasmap").read_text(encoding="utf-8"))
+    assert atlasmap["state"]["background"] == "atlas-vtt/collections/demo/maps/demo.png"
+    map_record = json.loads((collections / "maps" / "demo.json").read_text(encoding="utf-8"))
+    assert map_record["mapFilePath"] == "atlas-vtt/collections/demo/maps/demo.png"
+    scene_record = json.loads((collections / "scenes" / "demo.json").read_text(encoding="utf-8"))
+    assert scene_record["mapPath"] == "atlas-vtt/collections/demo/scenes/demo.atlasmap"
+
+
+def test_publish_reports_counts_refuse_on_diff_and_force_v2(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert "4 walls, 1 door, 1 light" in capsys.readouterr().out
+
+    # a hand-tuned scene (contract rule 3's moved door) is never overwritten
+    atlasmap = collections_dir(campaign) / "scenes" / "demo.atlasmap"
+    tuned = json.loads(atlasmap.read_text(encoding="utf-8"))
+    tuned["state"]["objects"]["walls"]["wall_uvtt_1"]["p1"] = {"x": 1.0, "y": 2.0}
+    tuned_bytes = scene.dumps(tuned)
+    atlasmap.write_bytes(tuned_bytes)
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
+    out = capsys.readouterr().out
+    assert "exists and differs" in out and "--force" in out
+    assert atlasmap.read_bytes() == tuned_bytes
+
+    # --force republishes the whole site set as demo-v2, original untouched
+    assert publish.main([str(campaign), "scenes", "--site", "demo", "--force"]) == 0
+    collections = collections_dir(campaign)
+    assert (collections / "scenes" / "demo-v2.atlasmap").is_file()
+    assert (collections / "scenes" / "demo-v2.json").is_file()
+    assert (collections / "maps" / "demo-v2.png").is_file()
+    assert (collections / "maps" / "demo-v2.json").is_file()
+    assert json.loads((collections / "scenes" / "demo-v2.json").read_text(
+        encoding="utf-8"))["mapPath"].endswith("demo-v2.atlasmap")
+    note = (campaign / "maps" / "sites" / "demo" / "demo.md").read_text(encoding="utf-8")
+    assert note.endswith("![[demo.atlasmap]]\n![[demo-v2.atlasmap]]\n")
+    assert json.loads(atlasmap.read_text(encoding="utf-8")) == tuned, \
+        "the hand-tuned scene was overwritten"
+
+    # --force again: the v2 set matches already, nothing written
+    assert publish.main([str(campaign), "scenes", "--site", "demo", "--force"]) == 0
+    assert "demo-v2 already matches — nothing written" in capsys.readouterr().out
+
+
+def test_publish_counts_line_reports_skips(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert "left out: 3 outside, 1 unlit, 1 window" in capsys.readouterr().out
+
+
+def test_publish_refuses_a_renamed_record(tmp_path, capsys):
+    """A record the DM renamed in Atlas is the DM's — republishing refuses
+    instead of stomping the rename (contract rule 3)."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    record_path = collections_dir(campaign) / "scenes" / "demo.json"
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    record["name"] = "Hand-renamed"
+    record["atlasRecord"] = {"format": 1, "id": "demo", "name": "Hand-renamed",
+                             "tags": [], "collection": "demo", "createdAt": 1,
+                             "modifiedAt": 2, "type": "scene"}
+    record_path.write_text(json.dumps(record), encoding="utf-8")
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
+    assert "exists and differs" in capsys.readouterr().out
+    assert json.loads(record_path.read_text(encoding="utf-8"))["name"] == "Hand-renamed"
+
+
+def test_publish_accepts_an_atlas_rewritten_record_as_same(tmp_path, capsys):
+    """The canonical rewrite of our own record means the same: republishing
+    writes nothing (ticket 01's corollary for rule 3)."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    record_path = collections_dir(campaign) / "scenes" / "demo.json"
+    intended = json.loads(record_path.read_text(encoding="utf-8"))
+    rewritten = {"mapPath": intended["mapPath"], "name": "demo", "tags": [],
+                 "type": "scene",
+                 "atlasRecord": {"format": 1, "id": "demo", "name": "demo",
+                                 "tags": [], "collection": "demo", "createdAt": 1,
+                                 "modifiedAt": 2, "type": "scene"}}
+    record_path.write_text(json.dumps(rewritten, indent=2), encoding="utf-8")
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 0
+    assert "already matches" in capsys.readouterr().out
+
+
+def test_atlasmap_refuse_on_diff_is_semantic_not_bytes(tmp_path, capsys):
+    """A reformatted-but-equal .atlasmap is not a divergence: the file is
+    compared as parsed JSON, never as bytes."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    atlasmap = collections_dir(campaign) / "scenes" / "demo.atlasmap"
+    payload = json.loads(atlasmap.read_text(encoding="utf-8"))
+    atlasmap.write_text(json.dumps(payload, separators=(",", ":")))  # same meaning, other bytes
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 0
+    assert "already matches" in capsys.readouterr().out
+
+
+def test_multiple_sites_publish_and_partial_refusal(tmp_path, capsys):
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    sites = campaign / "maps" / "sites"
+    for slug in ("alpha", "beta"):
+        site = sites / slug
+        site.mkdir()
+        (site / f"{slug}.png").write_bytes(sample_png_bytes())
+        write_uvtt(site / f"{slug}.uvtt", sample_doc())
+        (site / f"{slug}.md").write_text(f"{slug} briefing.\n", encoding="utf-8")
+    # gamma is broken: the run reports it and still publishes the others
+    gamma = sites / "gamma"
+    gamma.mkdir()
+    (gamma / "gamma.png").write_bytes(sample_png_bytes())
+    write_uvtt(gamma / "gamma.uvtt", variant_doc(image=""))
+    (gamma / "gamma.md").write_text("gamma\n", encoding="utf-8")
+    assert publish.main([str(campaign), "scenes"]) == 2
+    out = capsys.readouterr().out
+    for slug in ("alpha", "beta", "demo"):
+        assert f"{slug}: published" in out, slug
+    assert "refusing gamma" in out and "holds no map image" in out
+    for slug in ("alpha", "beta", "demo"):
+        assert (collections_dir(campaign) / "scenes" / f"{slug}.atlasmap").is_file()

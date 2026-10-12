@@ -102,8 +102,15 @@ atlas-vtt/collections/<collectionId>/{scenes,encounters,players,characters,statb
   id gets `<type>-recovered-<hash36>` where hash is a deterministic function
   of the path (`recoveredIds.ts:recoveredId`). Same stem → same id on every
   device, forever. Consequence: our stems (site slugs) are the identity.
-- A **scene record** carries `data: { mapPath: '<vault path to .atlasmap>' }`
-  — the scene content file is referenced, not inlined.
+- A **scene record** references its content: the *asset* carries
+  `data: { mapPath: '<vault path to .atlasmap>' }` — the scene content
+  file is referenced, not inlined — and on disk that payload is
+  written at the record JSON's top level as `mapPath` (Atlas's own
+  writer flattens `data` into the file, `recordFile.ts`; adoption reads
+  the top-level key, `assetAdoption.ts`, with the sibling
+  `<stem>.atlasmap` as fallback). Our scene records state the
+  top-level `mapPath` (ticket 05, resolving ticket 02's bycatch
+  question).
 - A **map record** carries `mapFilePath` (the image); the image can live
   anywhere in the vault and the record states where — but a map whose
   stated image is missing is skipped at the vault check

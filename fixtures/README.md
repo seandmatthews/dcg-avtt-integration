@@ -18,7 +18,13 @@ Capture procedure (per pin):
 2. Open a throwaway vault, import `sample.uvtt` via the UI.
 3. Commit the resulting `.atlasmap` as
    `golden-<version>/sample.atlasmap` and note the version in the
-   table below.
+   table below. (The UI import renames the image into `assets/` as a
+   timestamped webp — that `background` path is capture-specific, and
+   the structural comparison checks it as a string, not a value.)
+
+Optionally (same procedure, one more import): commit `sample-lit.atlasmap`
+from the `sample-lit.uvtt` variant — it pins the ambient-luma branch the
+baked sample cannot take (see below).
 
 | version | captured | by |
 |---|---|---|
@@ -26,16 +32,40 @@ Capture procedure (per pin):
 
 ## `sample.uvtt` — designed, not arbitrary
 
-A small hand-built `.uvtt` that exercises **every** conversion rule
-(README §7.1), so the golden match is meaningful:
+A small hand-built `.uvtt` (64×32 px PNG, 4×2 cells, `origin (1,1)`,
+cellSize 16) that exercises **every** conversion rule (README §7.1), so
+the golden match is meaningful. Its parts, by the rule each exercises:
 
-- nonzero `origin` (the offset math)
-- a polyline crossing the image edge (clipping + dropped-segment count)
-- a **closed** portal (→ door) and an **open** portal (→ dropped, counted)
-- a zero-range light (→ dropped)
-- `bakedLighting: true` (→ lights import hidden, ambient = 1)
-- an `ambientLight` color (→ Rec.709 luma path)
-- a non-square-cell variant kept separately for the refusal test
+| part | rule it exercises (README §3.3) |
+|---|---|
+| nonzero `origin (1,1)` | the `(p − origin) × cellSize` offset math |
+| wall line through `[(0,0),(2,0),(2,3)]` | one segment per point pair, shared endpoints, `chain_uvtt_1` |
+| wall line `[(0,1),(9,1)]` crossing the edge | Liang–Barsky clipping to one cell outside the image |
+| wall line `[(20,20),(21,20)]`, fully outside | dropped, `skipped.outside` counted |
+| `objects_line_of_sight` line | chains number across the merged line list (`chain_uvtt_4`) |
+| closed portal | → door `wall_uvtt_5`, `type: 'door', closed: true` |
+| open portal | Dungeondraft window → dropped, `skipped.windows` counted |
+| outside portal | dropped, `skipped.outside` counted |
+| light `range 2, intensity 1.5, color '#FF8800'` | cells → game units (`× 5`), `bright = dim/2`, intensity passthrough, color lowercased |
+| light `range 0` | dropped, `skipped.unlit` counted |
+| outside light | dropped, `skipped.outside` counted (still `on_image` — the importer counts it before the range check) |
+| `ambient_light: '#ff334455'` | the `aarrggbb` alpha-strip color read |
+| `baked_lighting: true` | lights import `hidden`; ambient is 1 even with a color named (the baked branch wins) |
 
-It lands with ticket 05, before the golden capture — the capture is
-only meaningful if the sample exercises everything.
+Ambient rule in one file — `ambient = 1` when baked, else the Rec. 709
+luma — cannot take both branches, so `sample.uvtt` pins the baked
+branch (with a color present, proving precedence) and:
+
+- `sample-lit.uvtt` — identical except `baked_lighting: false`: the
+  luma branch (`#334455` → 0.26), lights not hidden. Unit-tested; a
+  golden capture of it is the optional second capture above.
+- `sample-nonsquare.uvtt` — `map_size {4,3}` against the same 64×32
+  image: the ±2 px height check refuses it ("does not fit a map of
+  4 × 3 squares") — the non-square-cell refusal variant the refusal
+  test needs.
+
+It landed with ticket 05, before the golden capture — the capture is
+only meaningful if the sample exercises everything. The recipe for a
+deliberately *crowded* variant (tripping Atlas's manual-import
+`wallsCrowd` guard, ticket 03) is a wall stub per tile edge; it is not
+committed — the publisher never hits that guard.
