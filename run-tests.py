@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Run the avtt integration test tiers from the repo root.
 
-  python run-tests.py          fast tier: the pytest suite (smoke + the
-                               skip-marked discipline names, seconds)
+  python run-tests.py          fast tier: the pytest suite (seconds)
   python run-tests.py --all    reserved for the integration tier (the
                                golden-file tests, README §7.1) — no-op
                                until fixtures/golden-<version>/ exists
@@ -25,8 +24,9 @@ FAST_SUITES = [
 ]
 
 INTEGRATION_SUITES = [
-    # Lands with ticket 05: `-m integration` selects the golden-file
-    # tests, which need the human-captured fixture (README §7.1).
+    # The golden-file tests, marked `-m integration` (README §7.1): they
+    # need the human-captured fixture, and the fast tier skips them
+    # until it exists.
     ("avtt-golden", [sys.executable, "-m", "pytest", "tests",
                      "-m", "integration", "-q"]),
 ]
