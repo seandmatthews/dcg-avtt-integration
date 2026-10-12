@@ -13,6 +13,7 @@ Modules:
     presets        system-preset pack installer + ported validator
     config         campaign-side config (collection id, pack, paths)
     publish        the CLI that ties it together
+    _version       VERSION + ATLAS_PIN + the vault's Atlas detection
 
 Status: skeleton. Every function raises NotImplementedError until its
 spike (README §12) and ticket land. README.md is this repo's constitution.
@@ -26,4 +27,5 @@ __all__ = [
     "presets",
     "config",
     "publish",
+    "_version",
 ]

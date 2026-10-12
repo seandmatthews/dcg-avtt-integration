@@ -389,6 +389,23 @@ golden fixture:
 |---|---|---|
 | 0.6.0 | 2026-10-09 | initial analysis; library-sync semantics changed this release — bump carefully |
 
+The pin is machine-readable (ticket 07): `src/avtt/_version.py` declares
+`ATLAS_PIN` — the machine handle for the row above — alongside `VERSION`,
+this repo's companion version (mirroring `pyproject.toml`). The fixture
+directory `fixtures/golden-<ATLAS_PIN>/` is the pin's source of truth, and
+`tests/test_pin.py::test_atlas_pin_matches_fixtures` holds constant and
+fixture together. `publish.py <campaign> version` prints the companion
+version, the pin, and the Atlas version detected in the vault's plugin
+manifest (`.obsidian/plugins/atlas-vtt/manifest.json`; missing or
+unreadable → `unknown`). On a mismatch `presets` prints
+`atlas-pin-mismatch: pin=<v> detected=<v|unknown>` and installs anyway —
+a preset is a watched plain file the DM can see and re-edit, so refusing
+a file copy would trade a visible risk for a dead button — while `scenes`
+(ticket 05) takes the §5.1 `_inbox/` degrade path on the same condition,
+because scene content is where schema drift actually bites. Docstrings
+and messages cite `_version.ATLAS_PIN` instead of restating a version;
+only this table states one in prose.
+
 ## 8. When Atlas moves (the churn procedure)
 
 Atlas shipped 0.5.0 → 0.6.0 in three days; assume monthly breakage.
@@ -400,6 +417,9 @@ Atlas shipped 0.5.0 → 0.6.0 in three days; assume monthly breakage.
 3. Run the suite against both goldens; move the pin only when green.
 4. If red and the fix is nontrivial: ship the `_inbox/` degrade path and
    open the fix as a milestone, don't hack the port to pass.
+5. One commit per pin bump (ticket 07): the `ATLAS_PIN` constant, the new
+   `fixtures/golden-<version>/`, the §7 table row, and the `VERSION` bump
+   move together, git-tagged `v<VERSION>`. Consumers pin tags, never main.
 
 Upstream issues before forks; `dnd-mapping/vendor-patches/` is the
 last-resort precedent for owning a patched dependency, not the default.

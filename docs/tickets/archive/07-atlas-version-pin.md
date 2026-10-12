@@ -1,6 +1,8 @@
 # 07 — The Atlas version pin: declare, detect, degrade
 
-**Status:** proposed
+**Status:** completed — 2026-10-12 (implemented on
+`feature/07-atlas-version-pin` the same day; reviewer sign-off and the
+`archive/` move are part of this change)
 **Priority:** P1 — the core's bundle work (its tickets 51–53) pins a
 companion release and reports Atlas compatibility; nothing to pin until a
 release can say which Atlas it targets
@@ -79,17 +81,69 @@ nothing to bite on:
 
 ## Acceptance criteria
 
-- [ ] Pin integrity: `tests/test_pin.py::test_atlas_pin_matches_fixtures`
-- [ ] Manifest detection: present / absent / corrupt manifest —
+- [x] Pin integrity: `tests/test_pin.py::test_atlas_pin_matches_fixtures`
+- [x] Manifest detection: present / absent / corrupt manifest —
       `tests/test_pin.py::test_detect_atlas_version`
-- [ ] Preset mismatch warns and still writes, exit code 0 —
+- [x] Preset mismatch warns and still writes, exit code 0 —
       `tests/test_pin.py::test_preset_mismatch_warns_not_refuses`
-- [ ] `publish.py version` prints all three values —
+- [x] `publish.py version` prints all three values —
       `tests/test_pin.py::test_version_report`
-- [ ] Live check on this machine: the ember-coast vault (Atlas 0.7.1
+- [x] Live check on this machine: the ember-coast vault (Atlas 0.7.1
       installed) produces the mismatch warning; the presets install still
       succeeds and the file appears in the watched folder.
 
-## Implementation notes (YYYY-MM-DD)
+## Implementation notes (2026-10-12)
 
-_lands here when the status flips._
+Landed as the branch's single feat(07) commit on
+`feature/07-atlas-version-pin` (this commit — the status flip and the
+`archive/` move are folded into it). Before sign-off: ruff clean;
+`run-tests.py --all` green (82 passed, 4 skipped — the skips are
+ticket 05's discipline placeholders). Nothing left for a human; the
+golden-fixture capture remains ticket 05's human step, not this
+ticket's.
+
+- `src/avtt/_version.py` declares `VERSION = "0.1.0"` and
+  `ATLAS_PIN = "0.6.0"`; `detect_atlas_version()` reads
+  `<campaign>/.obsidian/plugins/atlas-vtt/manifest.json` (missing,
+  unreadable, unparseable, non-object, or no usable `version` string →
+  `"unknown"`). `presets` prints
+  `atlas-pin-mismatch: pin=<v> detected=<v|unknown>` and proceeds;
+  `publish.py <campaign> version` prints all three values; README
+  §7/§8 document the machine handle and the one-commit-per-bump,
+  `v<VERSION>`-tagged release ritual.
+- Deliberate deviations from the proposal:
+  - Detection is manifest-only: a plugin *disabled* in Obsidian is
+    not treated as `"unknown"` — the manifest on disk states which
+    Atlas wrote the vault's file formats, and that is what the pin is
+    about. "Plugin absent" maps to the manifest/plugin folder being
+    missing, matching the criterion's present/absent/corrupt cases.
+    Documented in the `_version.py` docstring.
+  - The builtin short-circuit message ("0.6.0 has Shadowdark built
+    in — consider using it") cites `ATLAS_PIN` now too — a runtime
+    version claim, not just a docstring one; today's output is
+    byte-identical, so the existing test needed no change.
+  - `BUILTIN_SYSTEMS_0_6_0` / `BUILTIN_DISPLAY_NAMES_0_6_0` keep
+    their names: they name the pinned-release snapshot they hold,
+    re-verified per §8 when the pin moves.
+  - Provenance lines of the form "verified against v0.6.0"
+    (`records.py`, `uvtt.py`, `config.py`, test docstrings) are left
+    as-is: historical verification records, not normative pin
+    claims — the same standing as README §3's source-read date.
+- Live check: run against the real ember-coast vault
+  (`campaign-data/campaigns/ember-coast`, manifest `0.7.1`) — the
+  mismatch warning printed from the real manifest via both `version`
+  and `presets`. The install half ran on a faithful temp copy (the
+  real `manifest.json` bytes verbatim; the real `campaign.yaml` plus
+  `system: icrpg`), because the vault's `campaign.yaml` declares no
+  `system:` and ticket 04's gate correctly refuses to write a pack
+  into a campaign that did not ask — hand-editing the live campaign
+  data was out of scope. On the copy: the warning line, then
+  `wrote .../system-presets/icrpg.json`, exit 0, file present in the
+  watched folder. The temp copy was deleted after the check.
+- Guards beyond the criteria: `tests/test_pin.py` also pins the
+  README §7 table row to `ATLAS_PIN` and `VERSION` to pyproject's
+  `[project] version` (regex-read, stdlib-only — `tomllib` is
+  3.11+); `test_smoke.py`'s surface pin covers `_version`.
+- No git tag: the constants are declared at the existing
+  0.1.0 / 0.6.0 values — a declaration, not a bump. §8's tag ritual
+  triggers on actual bumps.

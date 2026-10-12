@@ -6,17 +6,18 @@ Spec: README §3.4/§5.2. Presets are plain files at
 silently ignored by Atlas — the worst failure mode — so the installer
 refuses to write anything Atlas would not use exactly as authored.
 
-The validator is a port of Atlas VTT **v0.6.0** (pinned tag, commit
-``c5a9983003f40054caff8d6f394a09816ababa31``): ``presetValidation.ts``
+The validator is a port of Atlas VTT at the pinned release
+(``avtt._version.ATLAS_PIN`` — the machine handle; the README §7 table
+is the human record): ``presetValidation.ts``
 plus the modules it reads through — ``diceRules.ts``,
 ``initiativeRules.ts``, ``lightPresetValidation.ts``,
 ``senseValidation.ts``, ``visionDefaults.ts``,
 ``resources/resourceDefinitions.ts``, ``grid/measurementFormat.ts``,
 ``utils/clockWidget.ts``, ``utils/hexColor.ts``, ``vision/visionCone.ts``,
 ``types/systemPresetTypes.ts`` and the icon-name keys of
-``types/widgetIcons.ts``. Cited, never vendored (AGENTS.md). The pinned
-release table (README §7) governs every constant below; re-clone and
-re-check the tag before changing one.
+``types/widgetIcons.ts``. Cited, never vendored (AGENTS.md);
+``fixtures/golden-{ATLAS_PIN}/`` is the pin's source of truth.
+Re-clone and re-check the tag before changing a pinned constant.
 
 Strictness (README §3.4 + ticket 04): Atlas's loader either refuses the
 whole preset (fatal — the file is silently ignored) or silently
