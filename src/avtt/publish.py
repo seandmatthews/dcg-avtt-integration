@@ -5,6 +5,7 @@ Spec: README §5. The publishers, in build order:
     publish.py <campaign> presets [--pack icrpg]      (P0, ticket 04 — built)
     publish.py <campaign> scenes [--site <slug>]
                               [--force] [--dry-run]   (P2, ticket 05)
+    publish.py <campaign> version                     (ticket 07 — the pin report)
 
 ``--dry-run`` prints the exact file plan and the first divergence from
 what exists; its exit code mirrors the plan (0 = would succeed,
@@ -30,7 +31,7 @@ if __name__ == "__main__":
 
 import yaml  # noqa: E402
 
-from avtt import presets  # noqa: E402
+from avtt import _version, presets  # noqa: E402
 
 _NOT_BUILT = ("publish.py: the '{command}' publisher is not built yet — "
               "this repo is spec-first until the spikes in README §12 land. "
@@ -62,6 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
                                 "instead of refusing")
     p_presets.add_argument("--dry-run", action="store_true",
                            help="print the file plan and the first divergence")
+
+    sub.add_parser("version", help="print companion VERSION, ATLAS_PIN, and "
+                                   "the vault's detected Atlas version "
+                                   "(ticket 07)")
     return parser
 
 
@@ -89,17 +94,45 @@ def campaign_system(campaign: Path) -> str | None:
     return value.strip().lower()
 
 
+def _warn_pin_mismatch(campaign: Path) -> None:
+    """The pin check (ticket 07): report, never refuse.
+
+    Prints the loud machine-readable line when the vault's installed
+    Atlas differs from ``_version.ATLAS_PIN`` (unknown counts as
+    mismatch) and proceeds — a preset is a watched plain file the DM
+    can see and re-edit, so refusing a file copy would trade a visible
+    risk for a dead button. Scenes (ticket 05) take the ``_inbox/``
+    degrade path on the same condition instead: scene content is where
+    schema drift actually bites.
+    """
+    detected = _version.detect_atlas_version(campaign)
+    if detected == _version.ATLAS_PIN:
+        return
+    print(f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected={detected}")
+    if detected == "unknown":
+        print(f"warning: no readable Atlas plugin manifest "
+              f"({_version.MANIFEST_RELPATH.as_posix()}) — treating the pin "
+              "as unmatched")
+    else:
+        print(f"warning: this vault runs Atlas {detected}, the pack targets "
+              f"{_version.ATLAS_PIN} — installing anyway (a preset is a plain, "
+              "watched file the DM can see and re-edit)")
+
+
 def run_presets(campaign: Path, pack: str, force: bool, dry_run: bool) -> int:
     """The ``presets`` publisher: gate, short-circuit, validate, install.
 
     Order is load-bearing: the campaign must ask for the pack
     (``campaign.yaml`` ``system:``) before anything else happens; a system
     Atlas already ships ends in advice, not a file; only a validated pack
-    reaches the refuse-on-diff write (README §3.4/§5.2).
+    reaches the refuse-on-diff write (README §3.4/§5.2). The pin check
+    (ticket 07) runs once the campaign is known to exist and never
+    refuses — it only makes the version skew visible.
     """
     if not campaign.is_dir():
         print(f"refusing: no campaign directory at {campaign}")
         return 2
+    _warn_pin_mismatch(campaign)
     try:
         system = campaign_system(campaign)
     except ValueError as exc:
@@ -113,7 +146,7 @@ def run_presets(campaign: Path, pack: str, force: bool, dry_run: bool) -> int:
 
     display = presets.BUILTIN_DISPLAY_NAMES_0_6_0.get(pack)
     if display is not None:
-        print(f"0.6.0 has {display} built in — consider using it")
+        print(f"{_version.ATLAS_PIN} has {display} built in — consider using it")
         print("wrote nothing")
         return 0
 
@@ -144,6 +177,19 @@ def run_presets(campaign: Path, pack: str, force: bool, dry_run: bool) -> int:
         print(f"{result} already matches the pack — nothing written")
     else:
         print(f"wrote {result}")
+    return 0
+
+
+def run_version(campaign: Path) -> int:
+    """The ``version`` report (ticket 07): the companion version, the
+    Atlas pin, and the Atlas version detected in the vault — one
+    machine-readable block per value, the line the core's table-setup
+    card (core ticket 53) renders. Never refuses: a missing or
+    unreadable vault just reports ``unknown``.
+    """
+    print(f"avtt-version: {_version.VERSION}")
+    print(f"atlas-pin: {_version.ATLAS_PIN}")
+    print(f"atlas-detected: {_version.detect_atlas_version(campaign)}")
     return 0
 
 
@@ -180,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "presets":
         return run_presets(args.campaign, args.pack, args.force, args.dry_run)
+    if args.command == "version":
+        return run_version(args.campaign)
     print(_NOT_BUILT.format(command=args.command))
     return 2
 

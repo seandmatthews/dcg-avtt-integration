@@ -1,7 +1,8 @@
 """``.uvtt`` -> ``.atlasmap`` conversion — the port.
 
-Spec: README §3.2/§3.3. This is a port of Atlas's ``uvttToScene.ts``
-(v0.6.0), which makes it a derivative work of AGPL code — see README §10
+Spec: README §3.2/§3.3. This is a port of Atlas's ``uvttToScene.ts`` at
+the pinned release (``avtt._version.ATLAS_PIN``), which makes it a
+derivative work of AGPL code — see README §10
 for why the license is declared rather than dodged.
 
 The whole point of the port is determinism: identical ``.uvtt`` in ->

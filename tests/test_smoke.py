@@ -9,9 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from avtt import config, image_headers, presets, publish, records, scene, uvtt
+from avtt import (_version, config, image_headers, presets, publish,
+                  records, scene, uvtt)
 
-MODULES = (uvtt, image_headers, scene, records, presets, config, publish)
+MODULES = (uvtt, image_headers, scene, records, presets, config, publish,
+           _version)
 
 
 @pytest.mark.parametrize("module", MODULES, ids=lambda m: m.__name__)
@@ -27,6 +29,8 @@ def test_module_imports(module):
     (presets, "validate_preset"), (presets, "install"),
     (presets, "load_pack_preset"), (presets, "BUILTIN_SYSTEMS_0_6_0"),
     (config, "AvttConfig"), (config, "load"),
+    (_version, "VERSION"), (_version, "ATLAS_PIN"),
+    (_version, "detect_atlas_version"),
 ])
 def test_public_surface_exists(entry):
     module, name = entry
