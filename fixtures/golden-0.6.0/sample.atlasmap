@@ -1,0 +1,135 @@
+{
+  "state": {
+    "schema": "atlas-vtt",
+    "version": 4,
+    "background": "atlas-vtt/assets/sample_1792349624252_ihpqiv.webp",
+    "grid": {
+      "enabled": true,
+      "visible": true,
+      "snapToGrid": true,
+      "type": "square",
+      "size": 16,
+      "offsetX": 0,
+      "offsetY": 0,
+      "opacity": 0.5,
+      "lineType": "solid",
+      "lineWidth": 1
+    },
+    "objects": {
+      "tokens": {},
+      "fog": {},
+      "pins": {},
+      "texts": {},
+      "drawings": {},
+      "walls": {
+        "wall_uvtt_1": {
+          "id": "wall_uvtt_1",
+          "kind": "wall",
+          "p1": {
+            "x": -16,
+            "y": -16
+          },
+          "p2": {
+            "x": 16,
+            "y": -16
+          },
+          "type": "solid",
+          "chainId": "chain_uvtt_1"
+        },
+        "wall_uvtt_2": {
+          "id": "wall_uvtt_2",
+          "kind": "wall",
+          "p1": {
+            "x": 16,
+            "y": -16
+          },
+          "p2": {
+            "x": 16,
+            "y": 32
+          },
+          "type": "solid",
+          "chainId": "chain_uvtt_1"
+        },
+        "wall_uvtt_3": {
+          "id": "wall_uvtt_3",
+          "kind": "wall",
+          "p1": {
+            "x": -16,
+            "y": 0
+          },
+          "p2": {
+            "x": 80,
+            "y": 0
+          },
+          "type": "solid",
+          "chainId": "chain_uvtt_2"
+        },
+        "wall_uvtt_4": {
+          "id": "wall_uvtt_4",
+          "kind": "wall",
+          "p1": {
+            "x": 48,
+            "y": 16
+          },
+          "p2": {
+            "x": 48,
+            "y": -16
+          },
+          "type": "solid",
+          "chainId": "chain_uvtt_4"
+        },
+        "wall_uvtt_5": {
+          "id": "wall_uvtt_5",
+          "kind": "wall",
+          "p1": {
+            "x": 0,
+            "y": 0
+          },
+          "p2": {
+            "x": 16,
+            "y": 0
+          },
+          "type": "door",
+          "closed": true
+        }
+      },
+      "lights": {
+        "light_uvtt_1": {
+          "id": "light_uvtt_1",
+          "kind": "light",
+          "x": 16,
+          "y": 16,
+          "emission": {
+            "bright": 5,
+            "dim": 10,
+            "color": "#ff8800",
+            "intensity": 1.5,
+            "animation": "none",
+            "kind": "custom"
+          },
+          "hidden": true
+        }
+      }
+    },
+    "camera": {
+      "x": 0,
+      "y": 0,
+      "scale": 1
+    },
+    "tokenSettings": {
+      "showNameplates": false,
+      "hiddenResources": [
+        "stress"
+      ],
+      "showInstanceBadges": true,
+      "tokenRingSize": 1,
+      "showHPBars": true,
+      "showStressBars": false
+    },
+    "lighting": {
+      "enabled": true,
+      "ambient": 1
+    }
+  },
+  "version": 4
+}

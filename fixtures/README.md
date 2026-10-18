@@ -19,8 +19,25 @@ Capture procedure (per pin):
 3. Commit the resulting `.atlasmap` as
    `golden-<version>/sample.atlasmap` and note the version in the
    table below. (The UI import renames the image into `assets/` as a
-   timestamped webp — that `background` path is capture-specific, and
-   the structural comparison checks it as a string, not a value.)
+   timestamped asset — that `background` path is capture-specific, and
+   the structural comparison checks it as a string, not a value. 0.6.0
+   re-encoded the image as `.webp`; 0.7.1 keeps the source format, so
+   its golden's background is a `.png` — the imports-no-longer-
+   recompressed change.)
+
+Steps 1–3 are automated by `tools/capture-golden.py <version>` (needs
+desktop Obsidian installed; Windows): it builds a throwaway vault,
+installs the plugin build attached to the version's GitHub release,
+launches an isolated Obsidian instance (own `--user-data-dir`, so the
+owner's running Obsidian is untouched), clicks through the vault trust
+modal, opens the asset manager, and drops `sample.uvtt` onto it — the
+same drag a GM performs, synthesized through the plugin's own drop
+handler. It then suppresses `WorkspaceLeaf.openFile` before the drop:
+the UI import auto-opens the finished scene, whose map store autosaves
+the full runtime envelope (widgets, initiative, fog state) over the
+file — the golden must stay the pure import output (`newSceneFile`'s
+envelope), because that is what README §3.3 holds the port to. A
+postcondition refuses a capture carrying non-import state keys.
 
 Optionally (same procedure, one more import): commit `sample-lit.atlasmap`
 from the `sample-lit.uvtt` variant — it pins the ambient-luma branch the
@@ -28,7 +45,8 @@ baked sample cannot take (see below).
 
 | version | captured | by |
 |---|---|---|
-| (none yet — first capture gates ticket 05's golden test) | | |
+| 0.6.0 | 2026-10-18 | `tools/capture-golden.py 0.6.0` |
+| 0.7.1 | 2026-10-18 | `tools/capture-golden.py 0.7.1` |
 
 ## `sample.uvtt` — designed, not arbitrary
 

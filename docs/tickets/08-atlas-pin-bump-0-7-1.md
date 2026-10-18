@@ -8,7 +8,8 @@ accepts presets the pinned release refuses
 **Area:** `src/avtt/_version.py` (ATLAS_PIN, VERSION), `src/avtt/presets.py`
 (unitDistance bounds, builtin-constant rename), `tests/test_presets.py`,
 `fixtures/golden-0.6.0/`, `fixtures/golden-0.7.1/`, `fixtures/README.md`,
-`README.md` (status line, §3 stamp, §7 table), `pyproject.toml` (VERSION)
+`README.md` (status line, §3 stamp, §7 table), `pyproject.toml` (VERSION);
+`tools/capture-golden.py` + both goldens already landed 2026-10-18 (Proposal 1)
 **Found by:** the owner's pin-bump idea; grounded for this ticket in a
 0.6.0→0.7.1 re-clone diff re-verified 2026-10-13 (the commands and their
 outputs are recorded in Problem — re-runnable as written)
@@ -94,23 +95,34 @@ no `golden-0.7.1/` exists, so `tests/test_scenes.py::test_golden_file` and
 the whole integration tier skip (`run-tests.py:60-66` prints its skip note
 until a `golden-*/sample.atlasmap` exists). Ticket 05's acceptance list was
 signed off with exactly this criterion left open: the human capture.
+**Update 2026-10-18:** both goldens now exist — captured by
+`tools/capture-golden.py` (Proposal 1 below) and green against the port at
+both pins (`run-tests.py --all` with the pin still 0.6.0, then
+`tests/test_scenes.py::test_golden_file` with the pin flipped to 0.7.1).
+The gate runs; what remains is the code work of Proposals 2–6.
 
 ## Proposal
 
-1. **The human capture first** — the only step an agent cannot do — both
-   goldens in one sitting, per fixtures/README.md's procedure:
-   a. Install Atlas **0.6.0** (a 0.6.0 release build ran on this machine on
-      2026-10-10 — README §3.1's spike-1 experiment), import
-      `fixtures/sample.uvtt` in a throwaway vault, commit the result as
-      `fixtures/golden-0.6.0/sample.atlasmap`, and fill the
-      fixtures/README.md table row. This closes ticket 05's still-open
-      criterion; it folds into this bump because §8's gate needs it.
-   b. Upgrade the same vault to **0.7.1**, import again, commit as
-      `fixtures/golden-0.7.1/sample.atlasmap`, second table row.
-   - **Needs a ruling if 0.6.0 can no longer be installed when this runs:**
-     either postpone the bump, or run the gate single-golden
-     (`golden-0.7.1` only) with the §8 deviation recorded in this ticket's
-     Implementation notes. Do not decide silently.
+1. **The golden capture — DONE 2026-10-18, no human step needed.** The
+   original plan reserved this for a human at the Atlas UI; it proved
+   automatable end to end, so it was done before implementation started.
+   `tools/capture-golden.py` (committed alongside the goldens) builds a
+   throwaway vault per version, installs the plugin from the version's
+   GitHub release assets, drives an isolated Obsidian instance over CDP
+   (own `--user-data-dir`; the owner's running Obsidian is untouched), and
+   synthesizes the asset-manager drop — the real import code path — with
+   `WorkspaceLeaf.openFile` suppressed so the file stays the pure import
+   output (`newSceneFile`'s envelope) rather than the auto-open's runtime
+   rewrite; a postcondition refuses any capture carrying non-import state
+   keys (the first attempt caught exactly that poisoning). Both goldens are
+   committed and green against the port at both pins (Problem, update).
+   fixtures/README.md records the method and one capture finding the source
+   diff had missed: 0.7.1 keeps the imported image's source format
+   (background `.png`) where 0.6.0 re-encoded it as `.webp` — the
+   structural check treats the background path as a capture-specific
+   string, so it does not bite the port.
+   - The "0.6.0 can no longer be installed" ruling is moot: the 0.6.0
+     release assets install fine and both goldens are captured.
 2. **Port the bounds** in `src/avtt/presets.py::_validate_grid_defaults`:
    replace the `> 0` check with the inclusive range — a module-level
    `MIN_UNIT_DISTANCE = 0.000001` / `MAX_UNIT_DISTANCE = 1_000_000` mirroring

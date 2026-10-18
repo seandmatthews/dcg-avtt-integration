@@ -11,8 +11,9 @@ the CLI with the `_inbox/` degrade path) are built, as is the
 machine-readable Atlas pin (ticket 07 — `_version.py`, the `version`
 subcommand, the mismatch policy). `party` (ticket 06) stays parked,
 `proposed`; the ICRPG fence templates (P1, §1) are unwritten content;
-and one human step is open: the golden-fixture capture
-(fixtures/README.md), until which the golden tests skip.
+and the golden fixtures for 0.6.0 and 0.7.1 are captured (2026-10-18,
+fixtures/README.md via `tools/capture-golden.py` — the capture is
+automated; the pin itself still reads 0.6.0 until ticket 08 lands).
 Everything below was verified against
 Atlas VTT v0.6.0 source on 2026-10-09; see "The Atlas contract" for what was
 checked and "Open questions" for what remains open.
