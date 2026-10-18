@@ -7,7 +7,7 @@ the system-specific payload that cannot live in the canon core
 | file | what it is | status |
 |---|---|---|
 | `preset.json` | the Atlas system preset (widgets, dice, initiative, conditions, resources, lights) | **shipped (ticket 04)** |
-| `fences/` | statblock fence templates: `npc`, `pc`, `mook` | values from the table's house conventions |
+| `fences/` | statblock fence templates: `npc`, `pc`, `mook` | **not yet written** (P1, README §1) — rules in `fences/README.md`; values awaited from the table's house conventions |
 | this file | provenance for every knob below | complete for the preset |
 
 ## The rule that governs this pack

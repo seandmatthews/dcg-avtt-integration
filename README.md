@@ -4,13 +4,18 @@ The seam between [`dnd-campaign-generator`](../dnd-campaign-generator) (the
 canon core) and [Atlas VTT](https://github.com/atlas-vtt/atlas-vtt) (the
 at-the-table surface).
 
-**Status: first build landed (2026-10-11).** The presets publisher
-(ticket 04 — `presets.py`, the `presets` subcommand, `packs/icrpg/`) is
-built; `scenes` (ticket 05) and `party` (ticket 06) are still spec-first.
+**Status: both publishers built (2026-10-12).** `presets` (ticket 04 —
+`presets.py`, the `presets` subcommand, `packs/icrpg/`) and `scenes`
+(ticket 05 — the `.uvtt`→`.atlasmap` port, records, `avtt.yaml` config,
+the CLI with the `_inbox/` degrade path) are built, as is the
+machine-readable Atlas pin (ticket 07 — `_version.py`, the `version`
+subcommand, the mismatch policy). `party` (ticket 06) stays parked,
+`proposed`; the ICRPG fence templates (P1, §1) are unwritten content;
+and one human step is open: the golden-fixture capture
+(fixtures/README.md), until which the golden tests skip.
 Everything below was verified against
 Atlas VTT v0.6.0 source on 2026-10-09; see "The Atlas contract" for what was
-checked and "Open questions" for the spikes that precede the remaining
-builds.
+checked and "Open questions" for what remains open.
 **Tested against: Atlas VTT 0.6.0** (released 2026-10-05). This file is the
 repo's constitution: when code and README disagree, one of them is wrong and
 must be fixed the same day.
@@ -267,29 +272,37 @@ defect.
   these are what the ICRPG pack's alarm clock and round counter use.
 - Atlas is AGPL-3.0, desktop-only, offline; requires Obsidian ≥ 1.8.7.
 
-## 4. Layout (planned)
+## 4. Layout
 
 ```
 dcg-avtt-integration/
   README.md                 this file
+  run-tests.py              the gate: fast tier; --all adds the golden tier
   src/avtt/
     uvtt.py                 .uvtt parsing (fields + limits, plain-words refusals)
     image_headers.py        stdlib PNG/JPEG/WebP dimension readers
     scene.py                uvtt → .atlasmap (the port; deterministic ids)
     records.py              map/scene record writers (adoption shapes)
     presets.py              pack installer + preset validation port
-    publish.py              the CLI
+    publish.py              the CLI (scenes, presets, version; party refuses
+                            until built)
     config.py               campaign-side config: collection id, pack name,
-                            paths — read from campaign.yaml/adjacent file
+                            grid defaults, default widgets — read from
+                            <campaign>/avtt.yaml, fed-or-refused
+    _version.py             VERSION + ATLAS_PIN + vault detection (ticket 07)
   packs/
     icrpg/
-      preset.json           the Atlas system preset
-      fences/               statblock fence templates (npc, pc, mook)
+      preset.json           the Atlas system preset (shipped, ticket 04)
+      fences/               statblock fence templates (npc, pc, mook) — not
+                            yet written (P1, §1); rules in fences/README.md
       PACK.md               what's in the pack, where values come from
   fixtures/
-    golden-0.6.0/           scene JSON captured from a pinned Atlas release
+    golden-0.6.0/           empty until the human capture (fixtures/README.md)
     sample.uvtt             small fixture exercising every conversion rule
-  tests/
+    sample-lit.uvtt         the ambient-luma branch variant
+    sample-nonsquare.uvtt   the non-square-cell refusal variant
+  tests/                    test_pin, test_presets, test_records,
+                            test_scenes, test_smoke
 ```
 
 Python, stdlib-first (the core's old rule, kept here: `PyYAML` allowed for
@@ -312,27 +325,30 @@ also    companion note <slug>.md gains the Atlas scene-link line (append-only)
 ```
 
 Idempotent per contract rule 3. `.uvtt` beyond Atlas's limits → refuse with
-the importer's own plain-words reason before writing anything. Whole-map
-failures (crowded walls, oversized image) are reported, not swallowed.
+the importer's own plain-words reason before writing anything. Conversion
+skips (walls/doors/lights left out, unlit, windows) are printed, not
+swallowed. Atlas's walls-crowding refusal is the *manual* importer's guard,
+not ours (ticket 03) — the publisher writes scenes past it.
 
-**Degrade path (load-bearing):** the golden test (§7) fails against the
-installed/assumed Atlas version → `scenes` refuses to write `.atlasmap`
+**Degrade path (load-bearing):** the vault's detected Atlas version differs
+from the pin (`ATLAS_PIN`, §7) → `scenes` refuses to write `.atlasmap`
 files and instead drops the `.uvtt` into `atlas-vtt/_inbox/` with a printed
 instruction ("drag it into Atlas; walls, doors and lights come along").
 The interchange-format path always works; the adapter path is what needs
 the test.
 
-CLI: `uv run publish.py <campaign> scenes [--site <slug>] [--force] [--dry-run]`
+CLI: `uv run src/avtt/publish.py <campaign> scenes [--site <slug>] [--force] [--dry-run]`
 (`--dry-run` prints the exact file plan and the first divergence from what
 exists).
 
 ### 5.2 `presets` (P0 — the pack installer)
 
 ```
-uv run publish.py <campaign> presets [--pack icrpg]
+uv run src/avtt/publish.py <campaign> presets [--pack icrpg]
+                                           [--force] [--dry-run]
   → validates packs/<pack>/preset.json (ported validator, strict)
   → writes atlas-vtt/system-presets/<pack>.json, refuse-on-diff
-  → for a system Atlas ships built-in: writes nothing, says "0.6.0 has
+  → for a system Atlas ships built-in: writes nothing, says "<pin> has
     Shadowdark built in — consider using it"
 ```
 
@@ -364,10 +380,12 @@ churns. Un-park only with a fresh spike: token records
 
 `packs/icrpg/` is the repo's first pack and its reason to exist as more
 than a converter: it is the system-specific payload that cannot live in the
-canon core. Contents: the preset (§5.2), fence templates whose field
-vocabularies are ICRPG's (hearts, effort dice, abilities — display-first;
-the mechanically-live number is the preset's hearts resource), and PACK.md
-provenance. Future systems only join this repo if Atlas lacks them; a
+canon core. Contents: the preset (§5.2, shipped), fence templates whose
+field vocabularies are ICRPG's (hearts, effort dice, abilities —
+display-first; the mechanically-live number is the preset's hearts
+resource), and PACK.md provenance. The fence templates are not yet
+written (P1, §1) — `fences/README.md` holds the rules they must obey.
+Future systems only join this repo if Atlas lacks them; a
 system Atlas ships gets, at most, fence templates plus a PACK.md explaining
 why no preset is published.
 
@@ -473,7 +491,13 @@ formats does not by itself create obligations; vendoring Atlas source would
    `maps/<slug>.png` beside the record, and thumbnails are Atlas's job
    (generated in the background, never supplied). Details in ticket 02's
    Implementation notes.
-3. **Walls-crowding refusals**: dense generated maps may trip Atlas's
+3. ~~**Walls-crowding refusals**: dense generated maps may trip Atlas's
    `wallsCrowd` heuristic on *its* import path — irrelevant to ours (we
    write scenes directly), but the studio's manual-drag fallback hits it;
-   document the refusal text where the tutorial mentions manual import.
+   document the refusal text where the tutorial mentions manual import.~~ —
+   answered by ticket 03 (2026-10-12, source-read at the pin): the verbatim
+   refusal text, the threshold (both `uvttCrowding.ts` caps), and a drafted
+   plain-words paragraph for the core's ATLAS tutorial live in the archived
+   ticket. Still open there, by hand: carrying that paragraph into the
+   core repo's tutorial (a cross-repo edit) and the optional UI
+   confirmation of the refusal.
