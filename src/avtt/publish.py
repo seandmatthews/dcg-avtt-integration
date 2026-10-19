@@ -545,7 +545,7 @@ def run_presets(campaign: Path, pack: str, force: bool, dry_run: bool) -> int:
               "never writing a pack into a campaign that did not ask for it")
         return 2
 
-    display = presets.BUILTIN_DISPLAY_NAMES_0_6_0.get(pack)
+    display = presets.BUILTIN_DISPLAY_NAMES_0_7_1.get(pack)
     if display is not None:
         print(f"{_version.ATLAS_PIN} has {display} built in — consider using it")
         print("wrote nothing")

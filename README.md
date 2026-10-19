@@ -13,11 +13,11 @@ subcommand, the mismatch policy). `party` (ticket 06) stays parked,
 `proposed`; the ICRPG fence templates (P1, §1) are unwritten content;
 and the golden fixtures for 0.6.0 and 0.7.1 are captured (2026-10-18,
 fixtures/README.md via `tools/capture-golden.py` — the capture is
-automated; the pin itself still reads 0.6.0 until ticket 08 lands).
-Everything below was verified against
-Atlas VTT v0.6.0 source on 2026-10-09; see "The Atlas contract" for what was
+automated). Everything below was verified against
+Atlas VTT v0.7.1 source on 2026-10-13 (ticket 08's re-read; first read
+at v0.6.0 on 2026-10-09); see "The Atlas contract" for what was
 checked and "Open questions" for what remains open.
-**Tested against: Atlas VTT 0.6.0** (released 2026-10-05). This file is the
+**Tested against: Atlas VTT 0.7.1** (released 2026-10-10). This file is the
 repo's constitution: when code and README disagree, one of them is wrong and
 must be fixed the same day.
 
@@ -86,7 +86,7 @@ every few days; adapters to them do not get the same exemption.
    (icrpg DESIGN §9.2: spawning a process is loose coupling; merging code
    is not the fix). Until then: the DM runs the commands.
 
-## 3. The Atlas contract (source-read 2026-10-09, v0.6.0)
+## 3. The Atlas contract (source-read 2026-10-09, v0.6.0; re-read 2026-10-13, v0.7.1 — ticket 08)
 
 Everything below was verified by reading Atlas's TypeScript. The reference
 clone lived at `%TEMP%\atlas-vtt` (ephemeral — re-clone and re-check the tag
@@ -298,7 +298,8 @@ dcg-avtt-integration/
                             yet written (P1, §1); rules in fences/README.md
       PACK.md               what's in the pack, where values come from
   fixtures/
-    golden-0.6.0/           empty until the human capture (fixtures/README.md)
+    golden-0.6.0/           captured 2026-10-18 (fixtures/README.md)
+    golden-0.7.1/           captured 2026-10-18 (fixtures/README.md)
     sample.uvtt             small fixture exercising every conversion rule
     sample-lit.uvtt         the ambient-luma branch variant
     sample-nonsquare.uvtt   the non-square-cell refusal variant
@@ -414,6 +415,7 @@ golden fixture:
 | Atlas version | pinned | notes |
 |---|---|---|
 | 0.6.0 | 2026-10-09 | initial analysis; library-sync semantics changed this release — bump carefully |
+| 0.7.1 | 2026-10-18 | ticket 08; the one port delta is the preset validator's `unitDistance` bounds — now [0.000001, 1000000] inclusive (`grid/unitDistance.ts`), unannounced in the changelog; import semantics, scene schema (`ATLAS_VERSION = 4`) and built-in systems unchanged |
 
 The pin is machine-readable (ticket 07): `src/avtt/_version.py` declares
 `ATLAS_PIN` — the machine handle for the row above — alongside `VERSION`,

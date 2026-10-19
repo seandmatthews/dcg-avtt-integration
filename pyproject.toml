@@ -1,6 +1,6 @@
 [project]
 name = "dcg-avtt-integration"
-version = "0.1.0"
+version = "0.2.0"
 description = "The seam between dnd-campaign-generator (the canon core) and Atlas VTT (the at-the-table surface): everything that writes Atlas-owned file formats, so the core never knows Atlas exists."
 requires-python = ">=3.10"
 dependencies = [

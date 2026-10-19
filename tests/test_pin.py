@@ -116,13 +116,14 @@ def test_manifest_without_a_usable_version_is_unknown(tmp_path):
 
 def test_preset_mismatch_warns_not_refuses(tmp_path, capsys):
     """installed ≠ pin → the loud machine-readable line, the install still
-    happens, exit code 0."""
+    happens, exit code 0. (The manifest carries 9.9.9 — a version that is
+    not the pin at any pin; it read 0.7.1 while the pin was 0.6.0.)"""
     campaign = icrpg_campaign(tmp_path)
-    plant_manifest(campaign, "0.7.1")
+    plant_manifest(campaign, "9.9.9")
     rc = publish.main([str(campaign), "presets"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected=0.7.1" in out
+    assert f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected=9.9.9" in out
     target = campaign / "atlas-vtt" / "system-presets" / "icrpg.json"
     assert target.is_file(), "the mismatch warned the install off — it must not"
     assert json.loads(target.read_text(encoding="utf-8"))["id"] == "icrpg-house"
