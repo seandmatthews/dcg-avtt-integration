@@ -46,18 +46,19 @@ PRESET_FILE_FORMAT = 1
 BUILT_IN_ID_PREFIX = "builtin:"
 SYSTEM_PRESETS_DIRNAME = "system-presets"
 
-# The systems Atlas ships at 0.6.0, as ``system:`` slugs: the keys of
+# The systems Atlas ships at 0.7.1, as ``system:`` slugs: the keys of
 # ``builtInPresetId(key)`` = ``builtin:`` + key (``builtInPresets.ts`` and
-# the ``presets/*.ts`` each file names). Re-verified 2026-10-11 against the
-# pinned clone. Note the odd spellings are Atlas's own ids: ``coc7e``,
-# ``cyberpunkred``, ``drawsteel``, ``pathfinder2e``.
-BUILTIN_SYSTEMS_0_6_0 = frozenset({
+# the ``presets/*.ts`` each file names). Re-verified 2026-10-13 against tag
+# 0.7.1 (commit ``942514b``) — the same nine preset files as at 0.6.0
+# (ticket 08's source diff). Note the odd spellings are Atlas's own ids:
+# ``coc7e``, ``cyberpunkred``, ``drawsteel``, ``pathfinder2e``.
+BUILTIN_SYSTEMS_0_7_1 = frozenset({
     "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
     "drawsteel", "ose", "pathfinder2e", "shadowdark",
 })
 
 # Display names for the short-circuit message (each preset's ``name``).
-BUILTIN_DISPLAY_NAMES_0_6_0 = {
+BUILTIN_DISPLAY_NAMES_0_7_1 = {
     "cairn": "Cairn",
     "coc7e": "Call of Cthulhu",
     "cyberpunkred": "Cyberpunk RED",
@@ -98,6 +99,16 @@ GENERIC_SENSE_IDS = frozenset({
 })
 MIN_CLOCK_SEGMENTS = 2  # utils/clockWidget.ts
 MAX_CLOCK_SEGMENTS = 12
+# grid/unitDistance.ts MIN_UNIT_DISTANCE / MAX_UNIT_DISTANCE (0.7.1): the
+# inclusive range ``isUnitDistance`` accepts. 0.7.1 presetValidation.ts:59
+# routes ``gridDefaults.unitDistance`` through it; outside the range
+# ``parseGridDefaults`` returns null and Atlas refuses the whole preset.
+# (0.6.0 accepted any number > 0 — the tightening is unannounced in the
+# changelog; ticket 08's source diff caught it. The source comments the
+# minimum: below a millionth JavaScript writes the number as a power of
+# ten — "1e-7" — which no field reads back.) Cited, never vendored.
+MIN_UNIT_DISTANCE = 0.000001
+MAX_UNIT_DISTANCE = 1_000_000
 MAX_RESOURCES = 6  # resources/resourceTypes.ts
 # the keys of WIDGET_ICON_PATHS (types/widgetIcons.ts) — a condition's badge glyph
 WIDGET_ICONS = frozenset({
@@ -219,9 +230,10 @@ def _validate_grid_defaults(raw, failures: list[str]) -> None:
     if not (_is_str(raw.get("measurementMode")) and raw["measurementMode"] in MEASUREMENT_MODES):
         failures.append(f"{where}.measurementMode {raw.get('measurementMode')!r} is not one "
                         f"of {list(MEASUREMENT_MODES)} — Atlas refuses the whole preset")
-    if not (_number(raw.get("unitDistance")) and raw["unitDistance"] > 0):
+    if not (_number(raw.get("unitDistance"))
+            and MIN_UNIT_DISTANCE <= raw["unitDistance"] <= MAX_UNIT_DISTANCE):
         failures.append(f"{where}.unitDistance {raw.get('unitDistance')!r} is not a "
-                        "number above 0 — Atlas refuses the whole preset")
+                        "number between 0.000001 and 1000000 — Atlas refuses the whole preset")
     if raw.get("diagonalRule") is not None and not (
             _is_str(raw["diagonalRule"]) and raw["diagonalRule"] in DIAGONAL_RULES):
         failures.append(f"{where}.diagonalRule {raw['diagonalRule']!r} is not one of "

@@ -590,7 +590,7 @@ def test_degrade_is_unknown_detection_too(tmp_path, capsys):
 
 
 def test_degrade_is_idempotent_and_refuses_on_diff(tmp_path, capsys):
-    campaign = make_campaign(tmp_path, manifest="0.7.1")
+    campaign = make_campaign(tmp_path, manifest="9.9.9")  # not the pin, at any pin
     assert publish.main([str(campaign), "scenes"]) == 0
     inbox_copy = campaign / "atlas-vtt" / "_inbox" / "demo.uvtt"
     before = os.stat(inbox_copy).st_mtime_ns
@@ -605,7 +605,7 @@ def test_degrade_is_idempotent_and_refuses_on_diff(tmp_path, capsys):
 
 
 def test_degrade_refuses_an_invalid_uvtt_without_copying(tmp_path, capsys):
-    campaign = make_campaign(tmp_path, manifest="0.7.1",
+    campaign = make_campaign(tmp_path, manifest="9.9.9",  # not the pin, at any pin
                              doc=variant_doc(image=""))
     assert publish.main([str(campaign), "scenes"]) == 2
     assert "holds no map image" in capsys.readouterr().out
@@ -613,7 +613,7 @@ def test_degrade_refuses_an_invalid_uvtt_without_copying(tmp_path, capsys):
 
 
 def test_degrade_dry_run_writes_nothing(tmp_path, capsys):
-    campaign = make_campaign(tmp_path, manifest="0.7.1")
+    campaign = make_campaign(tmp_path, manifest="9.9.9")  # not the pin, at any pin
     assert publish.main([str(campaign), "scenes", "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "_inbox" in out and "would write it" in out

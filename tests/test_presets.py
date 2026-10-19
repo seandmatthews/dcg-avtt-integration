@@ -15,7 +15,7 @@ import os
 
 import pytest
 
-from avtt import presets, publish
+from avtt import _version, presets, publish
 
 # --- helpers ---------------------------------------------------------------
 
@@ -88,6 +88,10 @@ def test_minimal_valid_preset_passes():
      "unitType"),
     (broken(valid_preset(), **{"rules.gridDefaults.unitDistance": 0}),
      "unitDistance"),
+    (broken(valid_preset(), **{"rules.gridDefaults.unitDistance": 0.0000001}),
+     "between 0.000001 and 1000000"),
+    (broken(valid_preset(), **{"rules.gridDefaults.unitDistance": 1_000_000_000}),
+     "between 0.000001 and 1000000"),
     (broken(valid_preset(), **{"rules.gridDefaults.measurementMode": "imperial"}),
      "measurementMode"),
     (broken(valid_preset(), **{"rules.conditions": KeyError}), "conditions"),
@@ -102,6 +106,22 @@ def test_fatal_breaks_are_refused_whole(broken_preset, fragment):
     failures = presets.validate_preset(broken_preset)
     assert failures, "a deliberately-fatal preset passed the validator"
     assert any(fragment in failure for failure in failures), failures
+
+
+def test_unit_distance_bounds_are_inclusive():
+    """0.7.1 tightened the preset validator: ``gridDefaults.unitDistance``
+    is routed through ``isUnitDistance`` (presetValidation.ts:59), which
+    accepts exactly [0.000001, 1000000] — the boundaries are in, one step
+    outside on either side is fatal (grid/unitDistance.ts
+    MIN/MAX_UNIT_DISTANCE; ticket 08)."""
+    for inside in (0.000001, 5, 1_000_000):
+        preset = broken(valid_preset(), **{"rules.gridDefaults.unitDistance": inside})
+        assert presets.validate_preset(preset) == [], inside
+    for outside in (0.0000001, 1_000_000_000):
+        preset = broken(valid_preset(), **{"rules.gridDefaults.unitDistance": outside})
+        failures = presets.validate_preset(preset)
+        assert any("between 0.000001 and 1000000" in failure
+                   for failure in failures), (outside, failures)
 
 
 def test_bad_condition_shapes_are_refused():
@@ -264,14 +284,15 @@ def test_default_token_vision_legacy_fields_vs_senses_list():
 
 
 def test_builtin_systems_match_the_pinned_release():
-    """The short-circuit set is Atlas's own built-in ids at 0.6.0
-    (builtInPresetId keys, builtInPresets.ts + presets/*.ts) — re-verified
-    2026-10-11 against a fresh clone of tag 0.6.0 (commit c5a99830)."""
-    assert presets.BUILTIN_SYSTEMS_0_6_0 == frozenset({
+    """The short-circuit set is Atlas's own built-in ids at 0.7.1
+    (builtInPresetId keys, builtInPresets.ts + presets/*.ts) — the same
+    nine preset files as at 0.6.0, re-verified 2026-10-13 against tag
+    0.7.1 (commit 942514b) in ticket 08's source diff."""
+    assert presets.BUILTIN_SYSTEMS_0_7_1 == frozenset({
         "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
         "drawsteel", "ose", "pathfinder2e", "shadowdark",
     })
-    assert set(presets.BUILTIN_DISPLAY_NAMES_0_6_0) == set(presets.BUILTIN_SYSTEMS_0_6_0)
+    assert set(presets.BUILTIN_DISPLAY_NAMES_0_7_1) == set(presets.BUILTIN_SYSTEMS_0_7_1)
 
 
 def test_shipped_icrpg_pack_validates_clean():
@@ -424,13 +445,13 @@ def test_corrupt_campaign_yaml_is_refused_not_defaulted(tmp_path, capsys):
 
 
 def test_builtin_short_circuit_writes_nothing(tmp_path, capsys):
-    """0.6.0 ships Shadowdark; the installer advises and stops — before the
-    pack is even loaded (no packs/shadowdark/ exists)."""
+    """The pinned release ships Shadowdark; the installer advises and
+    stops — before the pack is even loaded (no packs/shadowdark/ exists)."""
     (tmp_path / "campaign.yaml").write_text("system: shadowdark\n", encoding="utf-8")
     rc = publish.main([str(tmp_path), "presets", "--pack", "shadowdark"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "0.6.0 has Shadowdark built in — consider using it" in out
+    assert f"{_version.ATLAS_PIN} has Shadowdark built in — consider using it" in out
     assert not (tmp_path / "atlas-vtt").exists()
 
 

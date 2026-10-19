@@ -25,8 +25,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-VERSION = "0.1.0"  # mirrors pyproject.toml [project] version — keep in step
-ATLAS_PIN = "0.6.0"  # the pinned-release table, README §7
+VERSION = "0.2.0"  # mirrors pyproject.toml [project] version — keep in step
+ATLAS_PIN = "0.7.1"  # the pinned-release table, README §7
 
 PLUGIN_ID = "atlas-vtt"
 MANIFEST_RELPATH = Path(".obsidian") / "plugins" / PLUGIN_ID / "manifest.json"
