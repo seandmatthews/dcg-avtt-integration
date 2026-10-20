@@ -11,13 +11,14 @@ the CLI with the `_inbox/` degrade path) are built, as is the
 machine-readable Atlas pin (ticket 07 — `_version.py`, the `version`
 subcommand, the mismatch policy). `party` (ticket 06) stays parked,
 `proposed`; the ICRPG fence templates (P1, §1) are unwritten content;
-and the golden fixtures for 0.6.0 and 0.7.1 are captured (2026-10-18,
-fixtures/README.md via `tools/capture-golden.py` — the capture is
-automated). Everything below was verified against
-Atlas VTT v0.7.1 source on 2026-10-13 (ticket 08's re-read; first read
-at v0.6.0 on 2026-10-09); see "The Atlas contract" for what was
+and the golden fixtures for 0.6.0, 0.7.1 and 0.8.0 are captured
+(0.6.0/0.7.1 on 2026-10-18, 0.8.0 on 2026-10-20; fixtures/README.md via
+`tools/capture-golden.py` — the capture is automated). Everything below
+was verified against Atlas VTT v0.8.0 source on 2026-10-20 (ticket 09's
+re-read; earlier reads at v0.7.1 on 2026-10-13 and v0.6.0 on
+2026-10-09); see "The Atlas contract" for what was
 checked and "Open questions" for what remains open.
-**Tested against: Atlas VTT 0.7.1** (released 2026-10-10). This file is the
+**Tested against: Atlas VTT 0.8.0** (released 2026-10-14). This file is the
 repo's constitution: when code and README disagree, one of them is wrong and
 must be fixed the same day.
 
@@ -86,7 +87,7 @@ every few days; adapters to them do not get the same exemption.
    (icrpg DESIGN §9.2: spawning a process is loose coupling; merging code
    is not the fix). Until then: the DM runs the commands.
 
-## 3. The Atlas contract (source-read 2026-10-09, v0.6.0; re-read 2026-10-13, v0.7.1 — ticket 08)
+## 3. The Atlas contract (source-read 2026-10-09, v0.6.0; re-read 2026-10-13, v0.7.1 — ticket 08; re-read 2026-10-20, v0.8.0 — ticket 09)
 
 Everything below was verified by reading Atlas's TypeScript. The reference
 clone lived at `%TEMP%\atlas-vtt` (ephemeral — re-clone and re-check the tag
@@ -251,17 +252,48 @@ Pathfinder 2e, Shadowdark, OSE, Cairn, Daggerheart, Draw Steel, Call of
 Cthulhu, Cyberpunk RED — for those, the installer's correct behavior is to
 publish nothing and say so.
 
-### 3.5 Statblock fences and notes
+### 3.5 Statblock fences and notes (re-stated 2026-10-20 for v0.8.0 — ticket 09)
 
-Creature resolution (`creatures/linkedCreature.ts`) tries, in order:
-Fantasy Statblocks bestiary (if the plugin runs) → the note's frontmatter
-creature → a ` ```statblock ` fence in the note body → bestiary name match.
-**Fences and frontmatter work with no plugin installed.** Our pack
-templates emit fences (body-only; the core's frontmatter parser must never
-see pack-specific keys). What Atlas parses mechanically from creature
-fields is biased toward 5e-ish conventions (HP drives token HP); ICRPG
-packs lean on token resources from the preset instead — by design, not
-defect.
+0.8.0's headline is native statblocks ("Atlas draws statblocks itself, so
+they show without the Fantasy Statblocks plugin" — `changelog/0.8.0.md`).
+What the source says:
+
+- **The fence parser is unchanged in substance.** `parseStatblockFence`
+  moved verbatim from `services/statblockNoteSource.ts` to
+  `statblocks/notes/statblockSource.ts` — the same ` ```statblock ` /
+  `~~~statblock` fence regex (byte-identical between the tags), YAML body,
+  and a malformed fence still parses as `{}` — "still a statblock fence",
+  rendered as an error, not ignored.
+- **The token-link resolution order is preserved** (`creatures/linkedCreature.ts`,
+  refactored around a source classifier, order intact): Fantasy Statblocks
+  bestiary (if the plugin runs) → the note's frontmatter creature → a
+  ` ```statblock ` fence in the note body → bestiary name match.
+- **What is new is a second, native surface.** A *native* statblock note is
+  frontmatter `statblock: true` + `atlas-template: <id>` (`TEMPLATE_KEY`,
+  `statblockSource.ts`). Atlas's own display fence is a *different fence
+  language*, ` ```atlas-statblock ` (`STATBLOCK_FENCE_LANGUAGE`,
+  `statblocks/render/statblockFence.ts`), whose body is ignored — the
+  note's frontmatter is the statblock.
+- **Inline fences now render without the plugin.** The one resolver
+  (`statblocks/resolve/resolveStatblock.ts`), with Fantasy Statblocks
+  absent: native notes render from frontmatter, and a body-only
+  ` ```statblock ` fence renders too, with the auto template
+  (`resolveInlineFence`: "its own YAML with the auto template"); a fence
+  that only *names* a bestiary creature or another note gives null — "only
+  the plugin can read it". Fence→creature resolution *for token links*
+  still requires the plugin (`resolveCreatureFromFence`'s
+  `if (!api) return null`; the api is `window.FantasyStatblocks`,
+  `services/FantasyStatblocksService.ts`) — the unchanged limitation, and
+  the reason ICRPG packs lean on token resources from the preset by
+  design, not defect.
+
+Our pack templates emit body-only fences: the core's frontmatter parser
+must never see pack-specific keys, and a *native* note would put
+`statblock: true` + `atlas-template:` frontmatter into the spine note —
+if a fences ticket ever wants native notes, that is a user ruling, not a
+silent switch. What Atlas parses mechanically from creature fields is
+biased toward 5e-ish conventions (HP drives token HP); the mechanically
+live number in ICRPG packs stays the preset's hearts resource.
 
 ### 3.6 Useful extras (verified)
 
@@ -271,7 +303,11 @@ defect.
 - Widgets: `counter`, `timer` (countdown seconds, persisted), `clock`
   (Blades-style progress wedges), scoped per scene or per collection —
   these are what the ICRPG pack's alarm clock and round counter use.
-- Atlas is AGPL-3.0, desktop-only, offline; requires Obsidian ≥ 1.8.7.
+- Atlas is AGPL-3.0, desktop-only; requires Obsidian ≥ 1.8.7 (`minAppVersion`
+  and `isDesktopOnly: true` unchanged at 0.8.0). 0.8.0 adds opt-in *online
+  play* (closed beta; off until enabled under Experimental features) —
+  Atlas's own feature, no contract this repo consumes changes; "offline"
+  now reads "offline unless the user turns online play on" (ticket 09).
 
 ## 4. Layout
 
@@ -300,6 +336,7 @@ dcg-avtt-integration/
   fixtures/
     golden-0.6.0/           captured 2026-10-18 (fixtures/README.md)
     golden-0.7.1/           captured 2026-10-18 (fixtures/README.md)
+    golden-0.8.0/           captured 2026-10-20 (fixtures/README.md)
     sample.uvtt             small fixture exercising every conversion rule
     sample-lit.uvtt         the ambient-luma branch variant
     sample-nonsquare.uvtt   the non-square-cell refusal variant
@@ -416,6 +453,7 @@ golden fixture:
 |---|---|---|
 | 0.6.0 | 2026-10-09 | initial analysis; library-sync semantics changed this release — bump carefully |
 | 0.7.1 | 2026-10-18 | ticket 08; the one port delta is the preset validator's `unitDistance` bounds — now [0.000001, 1000000] inclusive (`grid/unitDistance.ts`), unannounced in the changelog; import semantics, scene schema (`ATLAS_VERSION = 4`) and built-in systems unchanged |
+| 0.8.0 | 2026-10-20 | ticket 09; the one port delta is the preset validator's dice `defaultRoll`, widened to dice-set groups — `1d20+1d6` and longer sums now pass (`parseRollGroups`, `gameSystems/diceSets.ts:54,60`; the initiative roll keeps the single-group rule — the asymmetry is Atlas's); import semantics, scene schema (`ATLAS_VERSION = 4`), `unitDistance` bounds and built-in systems unchanged |
 
 The pin is machine-readable (ticket 07): `src/avtt/_version.py` declares
 `ATLAS_PIN` — the machine handle for the row above — alongside `VERSION`,
