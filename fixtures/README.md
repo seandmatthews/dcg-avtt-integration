@@ -23,7 +23,9 @@ Capture procedure (per pin):
    the structural comparison checks it as a string, not a value. 0.6.0
    re-encoded the image as `.webp`; 0.7.1 keeps the source format, so
    its golden's background is a `.png` — the imports-no-longer-
-   recompressed change.)
+   recompressed change. 0.8.0 likewise: its golden is structurally
+   identical to 0.7.1's apart from the timestamped asset name (the
+   0.7.1→0.8.0 source diff touched no import code — ticket 09).)
 
 Steps 1–3 are automated by `tools/capture-golden.py <version>` (needs
 desktop Obsidian installed; Windows): it builds a throwaway vault,
@@ -47,6 +49,7 @@ baked sample cannot take (see below).
 |---|---|---|
 | 0.6.0 | 2026-10-18 | `tools/capture-golden.py 0.6.0` |
 | 0.7.1 | 2026-10-18 | `tools/capture-golden.py 0.7.1` |
+| 0.8.0 | 2026-10-20 | `tools/capture-golden.py 0.8.0` |
 
 ## `sample.uvtt` — designed, not arbitrary
 

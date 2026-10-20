@@ -1,6 +1,9 @@
 # 09 — Atlas pin bump 0.7.1 → 0.8.0 (the second §8 churn)
 
-**Status:** proposed
+**Status:** completed (implemented + signed off 2026-10-20; this flip and
+the `archive/` move are folded into the branch's last commit — the
+§8-step-5 pin-bump commit, tagged `v0.3.0`; the port/golden work sits in
+the commit before it, `aaf4e0a`)
 **Priority:** P1 — the pin's job is to name the stable release this repo is
 verified against (§7); 0.8.0 has been stable since 2026-10-14 and the home
 vault's plugin follows stable at an uncontrolled moment (Obsidian's plugin
@@ -249,38 +252,38 @@ Findings:
 
 ## Acceptance criteria
 
-- [ ] The validator accepts multi-group `defaultRoll`s and keeps refusing
+- [x] The validator accepts multi-group `defaultRoll`s and keeps refusing
       malformed ones — pinned by `tests/test_presets.py`: new cases accepting
       `1d20+1d6` and whitespace-padded `" 1d20 + 1d6 "`; refusing
       `1d20+sword`, `100d6` (count above 99), `d1000` (sides above 999),
       `1d20++1d6`, and an all-whitespace roll — each with the refusal naming
       both shapes.
-- [ ] The initiative roll keeps the single-group rule (the asymmetry is
+- [x] The initiative roll keeps the single-group rule (the asymmetry is
       Atlas's) — a test pinning that `rules.initiative.roll: "1d20+1d6"` is
       refused while `rules.dice.defaultRoll: "1d20+1d6"` passes.
-- [ ] Golden captured and green both ways:
+- [x] Golden captured and green both ways:
       `fixtures/golden-0.8.0/sample.atlasmap` committed;
       `tests/test_scenes.py::test_golden_file` green with the pin still 0.7.1
       (reading `golden-0.7.1/`) and green after the flip (reading
       `golden-0.8.0/`) — via `python run-tests.py --all`.
-- [ ] Pin, fixture and README moved in one change:
+- [x] Pin, fixture and README moved in one change:
       `tests/test_pin.py::test_atlas_pin_matches_fixtures` and
       `::test_readme_table_carries_the_pin` green at `ATLAS_PIN = "0.8.0"`;
       `::test_version_mirrors_pyproject` green at the bumped VERSION; the
       change git-tagged `v<VERSION>` (checkable with `git tag`).
-- [ ] Builtin constants renamed `_0_8_0` with refreshed provenance —
+- [x] Builtin constants renamed `_0_8_0` with refreshed provenance —
       `tests/test_presets.py::test_builtin_systems_match_the_pinned_release`
       updated and green; the constants' comments cite 0.8.0 / commit
       `3d68221` (checkable by reading).
-- [ ] The shipped ICRPG pack still validates clean —
+- [x] The shipped ICRPG pack still validates clean —
       `tests/test_presets.py::test_shipped_icrpg_pack_validates_clean`
       (its `defaultRoll: "1d20"` and `unitDistance: 5`,
       `packs/icrpg/preset.json:6-7`, are unaffected by the widening; no pack
       change).
-- [ ] Gates green on the branch: `ruff check src tests run-tests.py` and
+- [x] Gates green on the branch: `ruff check src tests run-tests.py` and
       `python run-tests.py` / `python run-tests.py --all` (the integration
       tier runs once a `golden-*/sample.atlasmap` exists — `run-tests.py:60-66`).
-- [ ] README moved with the code (checkable by reading): §7 has the 0.8.0 row
+- [x] README moved with the code (checkable by reading): §7 has the 0.8.0 row
       and keeps 0.6.0/0.7.1; the header's "Tested against" names 0.8.0
       (released 2026-10-14); §3 carries the 0.8.0 stamp; §3.5 carries the
       re-statement with the five facts above; §3.6 carries the online-play
@@ -292,9 +295,114 @@ Findings:
       on a temp copy degrades to `_inbox/`; after the vault's plugin updates,
       the re-run prints no mismatch line and `scenes` writes `.atlasmap` with
       no `_inbox/`. Temp copies deleted after each check (verified gone).
-- [ ] Any §8 deviation is recorded in Implementation notes with the reason —
+      _(first three quarters proven 2026-10-20 — see Implementation notes;
+      the closing re-run waits on Obsidian updating the vault's plugin to
+      0.8.0, an external event not runnable today. Re-checked at sign-off,
+      2026-10-20 13:47 CDT: the manifest still reads 0.7.1 — the reviewer
+      accepted the criterion with its closing half pending, per the
+      ticket's own reading that the skew is §7 working as designed.)_
+- [x] Any §8 deviation is recorded in Implementation notes with the reason —
       never silent.
 
-## Implementation notes (YYYY-MM-DD)
+## Implementation notes (2026-10-20)
 
-_lands here when the status flips._
+Implemented on branch `feature/09-atlas-pin-bump-0-8-0` (worktree
+`../dcg-avtt-wt/09-atlas-pin-bump-0-8-0`); signed off by the reviewer
+2026-10-20, and this status flip + `archive/` move are folded into the
+branch's last commit (see the sign-off paragraph at the end).
+
+**§8 re-clone re-verified (the Problem's commands, re-run here).**
+`git ls-remote --tags` → `0.8.0` = `3d68221105701e570410e26eb5e34d0d56f8ac86`,
+the highest stable tag (only `0.8.1-beta.0` above); `git clone --branch
+0.8.0 … "$TEMP/atlas-vtt"` → `git describe --tags` = `0.8.0`, commit date
+2026-10-14 16:53:53 +0200, `git log -1 0.7.1` = `942514b`. Re-checked in
+the fresh clone: `parseRollGroups` (`diceSets.ts:60` — strip all
+whitespace, split on `+`, every part fullmatches `GROUP` at
+`diceSets.ts:54`, ≥ 1 group, no cap) gates `parseDiceRules`
+(`presetValidation.ts:128`); `parseInitiativeRules` still gates through
+`isValidDefaultRoll` (`initiativeRules.ts:23`); `src/app/grid/
+unitDistance.ts` diffs empty between the tags; the `src/app/import/uvtt/`
+diff is only `runUvttImport.ts`; `src/app/gameSystems/presets/` is the
+same ten files (nine content-changed, `builtInPresets.ts` unchanged, the
+nine `builtInPresetId` keys identical); `MapPersistence.ts:27-28` still
+`ATLAS_SCHEMA='atlas-vtt'`, `ATLAS_VERSION=4`; `changelog/0.8.0.md` front
+matter `date: 2026-10-14`. §3.5's five facts re-verified in the clone too
+(`TEMPLATE_KEY` at `statblockSource.ts:27`; `STATBLOCK_FENCE_LANGUAGE`
+rendered at `statblockFence.ts:63`; the resolver docstring's plugin-less
+statement and `if (!api) return null` at `FantasyStatblocksService.ts:157`,
+api `window.FantasyStatblocks` at `:9`).
+
+**Proposal 1 — golden captured, no human step.** `uv run --with
+websocket-client tools/capture-golden.py 0.8.0` → `fixtures/
+golden-0.8.0/sample.atlasmap`, envelope `schema='atlas-vtt' version=4`,
+non-import-key postcondition clean. Normalized-JSON diff vs
+`golden-0.7.1/sample.atlasmap`: only the capture-specific timestamped
+`background` asset name — the source-diff prediction held, so §8 step 4's
+contingency never triggered. `sample-lit` stays optional, as at
+0.6.0/0.7.1. The tool stopped its isolated Obsidian instance; verified 0
+Obsidian processes afterwards.
+
+**Proposals 2/3 — the port.** `_roll_groups_ok` mirrors `parseRollGroups`
+(no group-count cap); `_validate_dice` gates through it;
+`_default_roll_ok` stays for `_validate_initiative`; the dice refusal
+names both shapes; builtins renamed `_0_8_0` with refreshed provenance
+references updated in `publish.py` and `test_smoke.py` too.
+
+**Proposal 4 — the both-goldens gate, in order.** (a) With the golden and
+port committed at aaf4e0a and `ATLAS_PIN` still `"0.7.1"`:
+`ruff check src tests run-tests.py` clean; `python run-tests.py --all` →
+avtt 152 passed / 1 skipped, avtt-golden 1 passed (`test_golden_file`
+reading `golden-0.7.1`) / 1 skipped (optional lit variant) / 151
+deselected. (b) Flip to `"0.8.0"` + `VERSION` 0.3.0 (`pyproject.toml`,
+`uv.lock` re-locked): `--all` again → same shape, `test_golden_file`
+reading `golden-0.8.0`. Plain `python run-tests.py` also run, green. No
+§8 deviation; the contingency never fired.
+
+**Commit structure (recorded, not silent):** two commits, mirroring
+ticket 08's merged history (capture/port first, then the tagged §8-step-5
+flip): aaf4e0a (golden, port widening, tests, fixtures/README row,
+ticket → in-progress; pin still 0.7.1) and this flip commit (`ATLAS_PIN`,
+`VERSION`, `pyproject.toml`, `uv.lock`, README moves, fences/README
+sync), git-tagged `v0.3.0`.
+
+**Proposal 5 — README moved with the flip:** status line + "Tested
+against" to 0.8.0 (released 2026-10-14), §3 heading stamp, §3.5
+re-stated with the five facts, §3.6 online-play nuance, §7 table row
+(0.6.0 and 0.7.1 rows kept), §4 layout `golden-0.8.0/` line,
+fixtures/README.md third row, `packs/icrpg/fences/README.md` paraphrase
+synced. Historical provenance lines elsewhere (§3.1's 2026-10-10 live
+check, §12) stay, per ticket 07's ruling.
+
+**Proposal 6 — live check, first three quarters done on the home
+machine.** Ground truth: the ember-coast manifest reads
+`"version": "0.7.1"`. `publish.py version` on the real vault →
+`avtt-version: 0.3.0` / `atlas-pin: 0.8.0` / `atlas-detected: 0.7.1`
+(matches the manifest). `presets` on a temp copy →
+`atlas-pin-mismatch: pin=0.8.0 detected=0.7.1`, the warn-and-proceed
+line, `wrote …\system-presets\icrpg.json` (id `icrpg-house`), rc 0.
+`scenes` on a temp copy → the mismatch line + degrade message +
+`_inbox/the-drowned-crypt.uvtt` written, rc 0; the only `.atlasmap`
+files in the copy were inherited verbatim from the real vault, none
+written by the run. That is the §7 policy working as designed. Temp
+copies deleted after each check; `ls` on both temp paths, the capture
+dir and the reference clone all fail = gone.
+
+**Still open (the closing half of the live-check criterion):** the
+re-run after Obsidian updates the vault's plugin to 0.8.0 — expect pin
+0.8.0 / detected 0.8.0, no mismatch line, `.atlasmap` written, no
+`_inbox/`. Not runnable today (the plugin reads 0.7.1; Obsidian updates
+it at its own pace) — re-run Proposal 6's commands then and tick the
+box. Every other criterion is done and proven above.
+
+**Sign-off and flip (2026-10-20).** The reviewer accepted the ticket
+with the live-check criterion's closing half pending exactly as recorded
+above (manifest re-checked at 13:47 CDT before the flip: still
+`"version": "0.7.1"` — nothing new to run). Bookkeeping: status →
+completed, file moved `docs/tickets/` → `docs/tickets/archive/` in the
+same change, both folded into the branch's LAST commit by amending the
+§8-step-5 flip commit (a6e91f5 pre-amend); the `v0.3.0` tag was re-pointed
+at the amended commit so §8 step 5's "the change git-tagged v<VERSION>"
+stays true of the final commit (nothing was pushed; the tag existed only
+locally). No proposal deviation beyond what is already recorded above;
+the live-check criterion is the one item honestly left for a human (the
+re-run once Obsidian moves the vault's plugin).

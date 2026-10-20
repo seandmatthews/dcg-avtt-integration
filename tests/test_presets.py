@@ -100,12 +100,58 @@ def test_minimal_valid_preset_passes():
     (broken(valid_preset(), **{"rules.gridDefaults.abstractRangeBands":
                                [{"name": "Close", "maxSquares": 0}]}),
      "abstractRangeBands[0]"),
+    # ticket 09: the widened dice gate still refuses every malformed
+    # shape, and the refusal names both accepted shapes
+    (broken(valid_preset(), **{"rules.dice": {"defaultRoll": "1d20+sword",
+                                              "crit": "natural"}}),
+     "'1d20' or '1d20+1d6'"),
+    (broken(valid_preset(), **{"rules.dice": {"defaultRoll": "100d6",
+                                              "crit": "natural"}}),
+     "'1d20' or '1d20+1d6'"),
+    (broken(valid_preset(), **{"rules.dice": {"defaultRoll": "d1000",
+                                              "crit": "natural"}}),
+     "'1d20' or '1d20+1d6'"),
+    (broken(valid_preset(), **{"rules.dice": {"defaultRoll": "1d20++1d6",
+                                              "crit": "natural"}}),
+     "'1d20' or '1d20+1d6'"),
+    (broken(valid_preset(), **{"rules.dice": {"defaultRoll": "   ",
+                                              "crit": "natural"}}),
+     "'1d20' or '1d20+1d6'"),
 ])
 def test_fatal_breaks_are_refused_whole(broken_preset, fragment):
     """Atlas ignores these files entirely; the installer must never write one."""
     failures = presets.validate_preset(broken_preset)
     assert failures, "a deliberately-fatal preset passed the validator"
     assert any(fragment in failure for failure in failures), failures
+
+
+def test_dice_default_roll_widens_to_groups_initiative_does_not():
+    """0.8.0 widened ``rules.dice.defaultRoll`` to dice-set groups:
+    ``parseRollGroups`` (diceSets.ts:60) strips whitespace, splits on
+    ``+`` and requires every part to match the same ``NdS`` group regex
+    (diceSets.ts:54), so ``1d20+1d6`` — and any longer sum — passes
+    where 0.7.1 refused it (ticket 09). The initiative roll does not
+    widen: ``parseInitiativeRules`` still gates ``roll`` through the
+    single-group ``isValidDefaultRoll`` (initiativeRules.ts:23) — the
+    asymmetry is Atlas's, and the port keeps it."""
+    # the exact pairing the criterion names: multi-group passes for
+    # dice.defaultRoll and is refused for initiative.roll
+    preset = broken(valid_preset(), **{"rules.dice": {"defaultRoll": "1d20+1d6",
+                                                      "crit": "natural"}})
+    assert presets.validate_preset(preset) == []
+    preset = broken(valid_preset(),
+                    **{"rules.initiative": {"mode": "sides", "roll": "1d20+1d6",
+                                            "firstSide": "players"}})
+    failures = presets.validate_preset(preset)
+    assert any("rules.initiative is not usable" in failure for failure in failures), failures
+    # whitespace-padded groups pass (parseRollGroups strips all whitespace)
+    preset = broken(valid_preset(), **{"rules.dice": {"defaultRoll": " 1d20 + 1d6 ",
+                                                      "crit": "natural"}})
+    assert presets.validate_preset(preset) == []
+    # a longer sum too — parseRollGroups has no group-count cap
+    preset = broken(valid_preset(), **{"rules.dice": {"defaultRoll": "1d20+1d6+2d12",
+                                                      "crit": "doubles"}})
+    assert presets.validate_preset(preset) == []
 
 
 def test_unit_distance_bounds_are_inclusive():
@@ -284,15 +330,16 @@ def test_default_token_vision_legacy_fields_vs_senses_list():
 
 
 def test_builtin_systems_match_the_pinned_release():
-    """The short-circuit set is Atlas's own built-in ids at 0.7.1
+    """The short-circuit set is Atlas's own built-in ids at 0.8.0
     (builtInPresetId keys, builtInPresets.ts + presets/*.ts) — the same
-    nine preset files as at 0.6.0, re-verified 2026-10-13 against tag
-    0.7.1 (commit 942514b) in ticket 08's source diff."""
-    assert presets.BUILTIN_SYSTEMS_0_7_1 == frozenset({
+    ten files as at 0.7.1, ``builtInPresets.ts`` unchanged between the
+    tags, re-verified 2026-10-20 against tag 0.8.0 (commit 3d68221) in
+    ticket 09's source diff."""
+    assert presets.BUILTIN_SYSTEMS_0_8_0 == frozenset({
         "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
         "drawsteel", "ose", "pathfinder2e", "shadowdark",
     })
-    assert set(presets.BUILTIN_DISPLAY_NAMES_0_7_1) == set(presets.BUILTIN_SYSTEMS_0_7_1)
+    assert set(presets.BUILTIN_DISPLAY_NAMES_0_8_0) == set(presets.BUILTIN_SYSTEMS_0_8_0)
 
 
 def test_shipped_icrpg_pack_validates_clean():
