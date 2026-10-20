@@ -9,7 +9,8 @@ refuses to write anything Atlas would not use exactly as authored.
 The validator is a port of Atlas VTT at the pinned release
 (``avtt._version.ATLAS_PIN`` — the machine handle; the README §7 table
 is the human record): ``presetValidation.ts``
-plus the modules it reads through — ``diceRules.ts``,
+plus the modules it reads through — ``diceRules.ts``, ``diceSets.ts``
+(the dice-set group shape of ``defaultRoll``, 0.8.0),
 ``initiativeRules.ts``, ``lightPresetValidation.ts``,
 ``senseValidation.ts``, ``visionDefaults.ts``,
 ``resources/resourceDefinitions.ts``, ``grid/measurementFormat.ts``,
@@ -46,19 +47,20 @@ PRESET_FILE_FORMAT = 1
 BUILT_IN_ID_PREFIX = "builtin:"
 SYSTEM_PRESETS_DIRNAME = "system-presets"
 
-# The systems Atlas ships at 0.7.1, as ``system:`` slugs: the keys of
+# The systems Atlas ships at 0.8.0, as ``system:`` slugs: the keys of
 # ``builtInPresetId(key)`` = ``builtin:`` + key (``builtInPresets.ts`` and
-# the ``presets/*.ts`` each file names). Re-verified 2026-10-13 against tag
-# 0.7.1 (commit ``942514b``) — the same nine preset files as at 0.6.0
-# (ticket 08's source diff). Note the odd spellings are Atlas's own ids:
+# the ``presets/*.ts`` each file names). Re-verified 2026-10-20 against tag
+# 0.8.0 (commit ``3d68221``) — the same ten files as at 0.7.1, and
+# ``builtInPresets.ts`` itself unchanged between the tags (ticket 09's
+# source diff). Note the odd spellings are Atlas's own ids:
 # ``coc7e``, ``cyberpunkred``, ``drawsteel``, ``pathfinder2e``.
-BUILTIN_SYSTEMS_0_7_1 = frozenset({
+BUILTIN_SYSTEMS_0_8_0 = frozenset({
     "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
     "drawsteel", "ose", "pathfinder2e", "shadowdark",
 })
 
 # Display names for the short-circuit message (each preset's ``name``).
-BUILTIN_DISPLAY_NAMES_0_7_1 = {
+BUILTIN_DISPLAY_NAMES_0_8_0 = {
     "cairn": "Cairn",
     "coc7e": "Call of Cthulhu",
     "cyberpunkred": "Cyberpunk RED",
@@ -168,6 +170,23 @@ def _integer(value) -> bool:
 
 def _default_roll_ok(value) -> bool:
     return isinstance(value, str) and _DEFAULT_ROLL.match(value.strip()) is not None
+
+
+def _roll_groups_ok(value) -> bool:
+    """0.8.0 diceSets.ts ``parseRollGroups`` (diceSets.ts:60): whitespace
+    stripped, split on ``+``, **every** part a full match of the same
+    ``NdS`` group regex as ``diceRules.ts`` ``DEFAULT_ROLL``
+    (``GROUP``, diceSets.ts:54 — the identical pattern), at least one
+    group. No group-count cap: ``parseRollGroups`` has none
+    (``MAX_SET_GROUPS`` belongs to dice-set editing, not the validator).
+    Cited, never vendored (AGENTS.md). Gates ``rules.dice.defaultRoll``
+    only (``presetValidation.ts:128``); the initiative roll still goes
+    through the single-group ``isValidDefaultRoll``
+    (``initiativeRules.ts:23``) — the asymmetry is Atlas's."""
+    if not isinstance(value, str):
+        return False
+    parts = re.sub(r"\s+", "", value).split("+")
+    return bool(parts) and all(_DEFAULT_ROLL.match(part) is not None for part in parts)
 
 
 # --- the validator port ---------------------------------------------------
@@ -341,11 +360,12 @@ def _validate_dice(raw, failures: list[str]) -> None:
     """``parseDiceRules``: an unusable section is silently omitted."""
     if raw is None:
         return
-    usable = _is_record(raw) and _default_roll_ok(raw.get("defaultRoll")) \
+    usable = _is_record(raw) and _roll_groups_ok(raw.get("defaultRoll")) \
         and raw.get("crit") in CRIT_RULES
     if not usable:
-        failures.append(f"rules.dice is not usable (a defaultRoll like '1d20' — 1 to 99 dice "
-                        f"of 2 to 999 sides — and crit one of {list(CRIT_RULES)}) — "
+        failures.append(f"rules.dice is not usable (a defaultRoll like '1d20' or "
+                        f"'1d20+1d6' — one or more groups of 1 to 99 dice of 2 to "
+                        f"999 sides — and crit one of {list(CRIT_RULES)}) — "
                         "Atlas would silently ignore the whole section")
         return
     explode = raw.get("explode")

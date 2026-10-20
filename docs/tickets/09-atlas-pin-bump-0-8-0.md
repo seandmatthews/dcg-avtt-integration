@@ -1,6 +1,7 @@
 # 09 — Atlas pin bump 0.7.1 → 0.8.0 (the second §8 churn)
 
-**Status:** proposed
+**Status:** in-progress (picked up 2026-10-20 by the ticket implementer,
+branch `feature/09-atlas-pin-bump-0-8-0`)
 **Priority:** P1 — the pin's job is to name the stable release this repo is
 verified against (§7); 0.8.0 has been stable since 2026-10-14 and the home
 vault's plugin follows stable at an uncontrolled moment (Obsidian's plugin
