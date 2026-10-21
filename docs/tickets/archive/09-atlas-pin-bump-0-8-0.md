@@ -3,7 +3,7 @@
 **Status:** completed (implemented + signed off 2026-10-20; this flip and
 the `archive/` move are folded into the branch's last commit — the
 §8-step-5 pin-bump commit, tagged `v0.3.0`; the port/golden work sits in
-the commit before it, `aaf4e0a`)
+the commit before it, `dca4a9e`)
 **Priority:** P1 — the pin's job is to name the stable release this repo is
 verified against (§7); 0.8.0 has been stable since 2026-10-14 and the home
 vault's plugin follows stable at an uncontrolled moment (Obsidian's plugin
@@ -349,7 +349,7 @@ names both shapes; builtins renamed `_0_8_0` with refreshed provenance
 references updated in `publish.py` and `test_smoke.py` too.
 
 **Proposal 4 — the both-goldens gate, in order.** (a) With the golden and
-port committed at aaf4e0a and `ATLAS_PIN` still `"0.7.1"`:
+port committed at dca4a9e and `ATLAS_PIN` still `"0.7.1"`:
 `ruff check src tests run-tests.py` clean; `python run-tests.py --all` →
 avtt 152 passed / 1 skipped, avtt-golden 1 passed (`test_golden_file`
 reading `golden-0.7.1`) / 1 skipped (optional lit variant) / 151
@@ -360,7 +360,7 @@ reading `golden-0.8.0`. Plain `python run-tests.py` also run, green. No
 
 **Commit structure (recorded, not silent):** two commits, mirroring
 ticket 08's merged history (capture/port first, then the tagged §8-step-5
-flip): aaf4e0a (golden, port widening, tests, fixtures/README row,
+flip): dca4a9e (golden, port widening, tests, fixtures/README row,
 ticket → in-progress; pin still 0.7.1) and this flip commit (`ATLAS_PIN`,
 `VERSION`, `pyproject.toml`, `uv.lock`, README moves, fences/README
 sync), git-tagged `v0.3.0`.

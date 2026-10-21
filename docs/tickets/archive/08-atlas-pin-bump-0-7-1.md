@@ -239,7 +239,7 @@ Landed as the branch's single `feat(08)` commit on
 `feature/08-atlas-pin-bump-0-7-1` (the status flip and these notes folded
 in). The `v0.2.0` tag sits on it; §8 step 5's constant + §7 row + VERSION
 move together here — the `golden-0.7.1/` bytes themselves landed with
-Proposal 1 (819af9e) by design, before implementation started.
+Proposal 1 (caf7ab8) by design, before implementation started.
 
 Gates, run in the ticket's order:
 
