@@ -2,9 +2,11 @@
 """Run the avtt integration test tiers from the repo root.
 
   python run-tests.py          fast tier: the pytest suite (seconds)
-  python run-tests.py --all    reserved for the integration tier (the
-                               golden-file tests, README §7.1) — no-op
-                               until fixtures/golden-<version>/ exists
+  python run-tests.py --all    fast + integration tiers: adds the
+                               golden-file tests (README §7.1), which
+                               require the pin's captured fixture —
+                               missing is an error naming the capture
+                               command, never a quiet skip (ticket 12)
 
 Stdlib only. Every subprocess is list-form args — nothing ever goes
 through a shell (the family rule, kept from the campaign generator,
@@ -12,6 +14,8 @@ whose parent path contained `&`). Each suite gets a summary line and
 the run exits nonzero if any suite failed.
 """
 
+import os
+import re
 import subprocess
 import sys
 import time
@@ -19,17 +23,34 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
+GOLDEN_VERSION_ENV = "AVTT_GOLDEN_VERSION"
+
 FAST_SUITES = [
     ("avtt", [sys.executable, "-m", "pytest", "tests", "-q"]),
 ]
 
 INTEGRATION_SUITES = [
-    # The golden-file tests, marked `-m integration` (README §7.1): they
-    # need the human-captured fixture, and the fast tier skips them
-    # until it exists.
+    # The golden-file tests, marked `-m integration` (README §7.1): the
+    # --all tier runs them as their own suite. They require the golden
+    # fixture of the version under test (the pin's, or the
+    # AVTT_GOLDEN_VERSION override's) — checked before the suite runs.
     ("avtt-golden", [sys.executable, "-m", "pytest", "tests",
                      "-m", "integration", "-q"]),
 ]
+
+
+def _atlas_pin() -> str:
+    """``ATLAS_PIN`` read from ``src/avtt/_version.py`` as text: this
+    runner is stdlib-only and never imports the package, whose PyYAML
+    dependency lives in the uv venv, not necessarily in this
+    interpreter (the same text-read tests/test_pin.py applies to
+    pyproject.toml)."""
+    source = (ROOT / "src" / "avtt" / "_version.py").read_text(encoding="utf-8")
+    match = re.search(r'(?m)^ATLAS_PIN = "([^"]+)"', source)
+    if not match:
+        raise SystemExit("run-tests.py: ATLAS_PIN not found in "
+                         "src/avtt/_version.py — cannot scope the golden check")
+    return match.group(1)
 
 
 def run_suite(name, cmd):
@@ -54,17 +75,33 @@ def main():
     suites = list(FAST_SUITES)
     tier = "fast"
     if all_tiers:
-        # Ready only when a real captured fixture exists — the checked-in
-        # golden-<version>/ placeholder (just a README) must not select an
-        # empty integration suite (pytest exits 5 on zero collected tests).
-        golden = sorted((ROOT / "fixtures").glob("golden-*/sample.atlasmap"))
-        if not golden:
-            print("note: skipping the integration tier — no "
-                  "fixtures/golden-<version>/ yet (capture procedure: "
-                  "fixtures/README.md)")
-        else:
-            suites += INTEGRATION_SUITES
-            tier = "fast + integration"
+        # The integration tier requires the *pin's own* golden fixture
+        # (ticket 12): any committed golden-*/ used to select it, which
+        # let a pin bump merge with the pin's capture missing while every
+        # gate printed green. A missing fixture is an error naming the
+        # capture command — the capture is automated and lands in the
+        # same change as the pin. With AVTT_GOLDEN_VERSION set (§8 step
+        # 3's pre-flip check), that fixture must exist too, because the
+        # golden tests read it.
+        versions = [_atlas_pin()]
+        override = os.environ.get(GOLDEN_VERSION_ENV, "")
+        if override and override != versions[0]:
+            versions.append(override)
+        missing = [v for v in versions
+                   if not (ROOT / "fixtures" / f"golden-{v}"
+                           / "sample.atlasmap").is_file()]
+        if missing:
+            for version in missing:
+                print(f"error: fixtures/golden-{version}/sample.atlasmap is "
+                      f"missing — capture it with `uv run --with "
+                      f"websocket-client tools/capture-golden.py {version}` "
+                      "(automated, fixtures/README.md) and commit the "
+                      "fixture in the same change as the pin")
+            print("the integration tier requires the golden fixture above; "
+                  "a pin without its capture is not a pin")
+            return 2
+        suites += INTEGRATION_SUITES
+        tier = "fast + integration"
     print(f"run-tests.py: {len(suites)} suite(s), {tier} tier, root {ROOT}")
 
     results = [run_suite(name, cmd) for name, cmd in suites]
