@@ -11,14 +11,15 @@ the CLI with the `_inbox/` degrade path) are built, as is the
 machine-readable Atlas pin (ticket 07 — `_version.py`, the `version`
 subcommand, the mismatch policy). `party` (ticket 06) stays parked,
 `proposed`; the ICRPG fence templates (P1, §1) are unwritten content;
-and the golden fixtures for 0.6.0, 0.7.1 and 0.8.0 are captured
-(0.6.0/0.7.1 on 2026-10-18, 0.8.0 on 2026-10-20; fixtures/README.md via
+and the golden fixtures for 0.6.0, 0.7.1, 0.8.0 and 0.9.1 are captured
+(0.6.0/0.7.1 on 2026-10-18, 0.8.0 on 2026-10-20, 0.9.1 on 2026-10-23;
+fixtures/README.md via
 `tools/capture-golden.py` — the capture is automated). Everything below
-was verified against Atlas VTT v0.8.0 source on 2026-10-20 (ticket 09's
-re-read; earlier reads at v0.7.1 on 2026-10-13 and v0.6.0 on
-2026-10-09); see "The Atlas contract" for what was
+was verified against Atlas VTT v0.9.1 source on 2026-10-23 (ticket 16's
+re-read; earlier reads at v0.8.0 on 2026-10-20, v0.7.1 on 2026-10-13
+and v0.6.0 on 2026-10-09); see "The Atlas contract" for what was
 checked and "Open questions" for what remains open.
-**Tested against: Atlas VTT 0.8.0** (released 2026-10-14). This file is the
+**Tested against: Atlas VTT 0.9.1** (released 2026-10-22). This file is the
 repo's constitution: when code and README disagree, one of them is wrong and
 must be fixed the same day.
 
@@ -87,7 +88,7 @@ every few days; adapters to them do not get the same exemption.
    (icrpg DESIGN §9.2: spawning a process is loose coupling; merging code
    is not the fix). Until then: the DM runs the commands.
 
-## 3. The Atlas contract (source-read 2026-10-09, v0.6.0; re-read 2026-10-13, v0.7.1 — ticket 08; re-read 2026-10-20, v0.8.0 — ticket 09)
+## 3. The Atlas contract (source-read 2026-10-09, v0.6.0; re-read 2026-10-13, v0.7.1 — ticket 08; re-read 2026-10-20, v0.8.0 — ticket 09; re-read 2026-10-23, v0.9.1 — ticket 16)
 
 Everything below was verified by reading Atlas's TypeScript. The reference
 clone lived at `%TEMP%\atlas-vtt` (ephemeral — re-clone and re-check the tag
@@ -304,7 +305,7 @@ live number in ICRPG packs stays the preset's hearts resource.
   (Blades-style progress wedges), scoped per scene or per collection —
   these are what the ICRPG pack's alarm clock and round counter use.
 - Atlas is AGPL-3.0, desktop-only; requires Obsidian ≥ 1.8.7 (`minAppVersion`
-  and `isDesktopOnly: true` unchanged at 0.8.0). 0.8.0 adds opt-in *online
+  and `isDesktopOnly: true` unchanged at 0.9.1). 0.8.0 adds opt-in *online
   play* (closed beta; off until enabled under Experimental features) —
   Atlas's own feature, no contract this repo consumes changes; "offline"
   now reads "offline unless the user turns online play on" (ticket 09).
@@ -337,6 +338,7 @@ dcg-avtt-integration/
     golden-0.6.0/           captured 2026-10-18 (fixtures/README.md)
     golden-0.7.1/           captured 2026-10-18 (fixtures/README.md)
     golden-0.8.0/           captured 2026-10-20 (fixtures/README.md)
+    golden-0.9.1/           captured 2026-10-23 (fixtures/README.md)
     sample.uvtt             small fixture exercising every conversion rule
     sample-lit.uvtt         the ambient-luma branch variant
     sample-nonsquare.uvtt   the non-square-cell refusal variant
@@ -459,6 +461,7 @@ golden fixture:
 | 0.6.0 | 2026-10-09 | initial analysis; library-sync semantics changed this release — bump carefully |
 | 0.7.1 | 2026-10-18 | ticket 08; the one port delta is the preset validator's `unitDistance` bounds — now [0.000001, 1000000] inclusive (`grid/unitDistance.ts`), unannounced in the changelog; import semantics, scene schema (`ATLAS_VERSION = 4`) and built-in systems unchanged |
 | 0.8.0 | 2026-10-20 | ticket 09; the one port delta is the preset validator's dice `defaultRoll`, widened to dice-set groups — `1d20+1d6` and longer sums now pass (`parseRollGroups`, `gameSystems/diceSets.ts:54,60`; the initiative roll keeps the single-group rule — the asymmetry is Atlas's); import semantics, scene schema (`ATLAS_VERSION = 4`), `unitDistance` bounds and built-in systems unchanged |
+| 0.9.1 | 2026-10-23 | ticket 16; the one port delta is the preset validator's initiative widening — a `cards` mode plus optional knobs (`sides`, `sideRoll`, `deck`, `dealEachRound`, `lookAlikesShare`, `rollHitPoints`; `parseInitiativeRules` reading `gameSystems/initiativeSideRules.ts` and `initiativeCardRules.ts`) now pass as written, and the shapes Atlas would silently drop or repair are refused; import semantics (the `runUvttImport.ts` diff is notice text only), scene schema (`ATLAS_VERSION = 4`), adoption, `unitDistance` bounds and built-in systems unchanged — the 0.9.1 golden is byte-identical to 0.8.0's apart from the timestamped asset name |
 
 The pin is machine-readable (ticket 07): `src/avtt/_version.py` declares
 `ATLAS_PIN` — the machine handle for the row above — alongside `VERSION`,
@@ -485,7 +488,9 @@ only this table states one in prose.
 
 ## 8. When Atlas moves (the churn procedure)
 
-Atlas shipped 0.5.0 → 0.6.0 in three days; assume monthly breakage.
+Atlas shipped 0.5.0 → 0.6.0 in three days and has shipped a stable
+roughly weekly since (0.7.0 Oct 9 → 0.7.1 Oct 10 → 0.8.0 Oct 14 →
+0.9.0 Oct 20 → 0.9.1 Oct 22, all 2026); assume weekly breakage.
 
 1. Read the changelog; anything touching scenes/presets/adoption → treat as
    breaking until the golden test passes.

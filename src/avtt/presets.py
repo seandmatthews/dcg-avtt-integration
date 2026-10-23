@@ -11,7 +11,9 @@ The validator is a port of Atlas VTT at the pinned release
 is the human record): ``presetValidation.ts``
 plus the modules it reads through — ``diceRules.ts``, ``diceSets.ts``
 (the dice-set group shape of ``defaultRoll``, 0.8.0),
-``initiativeRules.ts``, ``lightPresetValidation.ts``,
+``initiativeRules.ts`` with its 0.9.1 widening
+(``initiativeSideRules.ts``, ``initiativeCardRules.ts``),
+``lightPresetValidation.ts``,
 ``senseValidation.ts``, ``visionDefaults.ts``,
 ``resources/resourceDefinitions.ts``, ``grid/measurementFormat.ts``,
 ``utils/clockWidget.ts``, ``utils/hexColor.ts``, ``vision/visionCone.ts``,
@@ -54,20 +56,21 @@ PRESET_FILE_FORMAT = 1
 BUILT_IN_ID_PREFIX = "builtin:"
 SYSTEM_PRESETS_DIRNAME = "system-presets"
 
-# The systems Atlas ships at 0.8.0, as ``system:`` slugs: the keys of
+# The systems Atlas ships at 0.9.1, as ``system:`` slugs: the keys of
 # ``builtInPresetId(key)`` = ``builtin:`` + key (``builtInPresets.ts`` and
-# the ``presets/*.ts`` each file names). Re-verified 2026-10-20 against tag
-# 0.8.0 (commit ``3d68221``) — the same ten files as at 0.7.1, and
-# ``builtInPresets.ts`` itself unchanged between the tags (ticket 09's
-# source diff). Note the odd spellings are Atlas's own ids:
+# the ``presets/*.ts`` each file names). Re-verified 2026-10-23 against tag
+# 0.9.1 (commit ``5499fd8``) — the same nine files and the same nine keys as
+# at 0.8.0, and ``builtInPresets.ts`` itself unchanged between the tags
+# (ticket 16's source diff; the OSE preset gained only an ``initiative``
+# block — data, not ids). Note the odd spellings are Atlas's own ids:
 # ``coc7e``, ``cyberpunkred``, ``drawsteel``, ``pathfinder2e``.
-BUILTIN_SYSTEMS_0_8_0 = frozenset({
+BUILTIN_SYSTEMS_0_9_1 = frozenset({
     "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
     "drawsteel", "ose", "pathfinder2e", "shadowdark",
 })
 
 # Display names for the short-circuit message (each preset's ``name``).
-BUILTIN_DISPLAY_NAMES_0_8_0 = {
+BUILTIN_DISPLAY_NAMES_0_9_1 = {
     "cairn": "Cairn",
     "coc7e": "Call of Cthulhu",
     "cyberpunkred": "Cyberpunk RED",
@@ -88,8 +91,18 @@ CONDITION_EFFECTS = ("blinded", "invisible", "airborne", "undetected")  # collec
 CRIT_RULES = ("natural", "roll-under", "doubles", "high-total", "none")  # diceRules.ts
 EXPLODE_SCOPES = ("default", "all")
 MAX_EXPLODING_FACES = 99
-INITIATIVE_MODES = ("turn-order", "sides")  # initiativeRules.ts
-INITIATIVE_SIDES = ("players", "opponents")
+INITIATIVE_MODES = ("turn-order", "sides", "cards")  # initiativeRules.ts (0.9.1: 'cards')
+INITIATIVE_SIDES = ("players", "opponents")  # initiativeSideRules.ts BUILT_IN_SIDES
+# initiativeSideRules.ts: at most MAX_SIDES sides fight (the built-in two
+# included), a named side's id is at most 64 characters and its name at
+# most MAX_SIDE_NAME — parseSideList silently drops or cuts past each.
+MAX_INITIATIVE_SIDES = 8
+MAX_INITIATIVE_SIDE_ID = 64
+MAX_INITIATIVE_SIDE_NAME = 40
+# initiativeCardRules.ts: the deck holds MIN_DECK..MAX_DECK cards; a size
+# outside it (or a non-number) is silently dropped for the default, 10.
+MIN_INITIATIVE_DECK = 2
+MAX_INITIATIVE_DECK = 50
 LIGHT_ANIMATIONS = ("none", "torch", "candle", "pulse", "magic")  # lightPresetValidation.ts
 LIGHT_UNITS = ("feet", "yards", "meters", "squares")
 LIGHT_KINDS = ("candle", "torch", "lantern", "magical", "darkness", "custom")  # lightPresets.ts
@@ -388,7 +401,14 @@ def _validate_dice(raw, failures: list[str]) -> None:
 
 
 def _validate_initiative(raw, failures: list[str]) -> None:
-    """``parseInitiativeRules``: an unusable section is silently omitted."""
+    """``parseInitiativeRules`` (0.9.1): an unusable section is silently
+    omitted. 0.9.1 widened the mode vocabulary with ``'cards'`` and added
+    optional knobs — a ``sides`` list, ``sideRoll``, the card parts
+    (``deck``, ``dealEachRound``, ``lookAlikesShare``) and
+    ``rollHitPoints`` — each read as written or silently dropped/repaired
+    (the repair cascade of ``parseSideList``/``sideParts``/
+    ``cardParts``/``hitPointRolls``); this port refuses every drop and
+    repair, the same line it has always drawn."""
     if raw is None:
         return
     if not (_is_record(raw)
@@ -396,8 +416,105 @@ def _validate_initiative(raw, failures: list[str]) -> None:
             and raw.get("firstSide") in INITIATIVE_SIDES
             and _default_roll_ok(raw.get("roll"))):
         failures.append(f"rules.initiative is not usable (mode one of {list(INITIATIVE_MODES)}, "
-                        f"firstSide one of {list(INITIATIVE_SIDES)}, a valid roll) — "
-                        "Atlas would silently ignore the whole section")
+                        f"firstSide one of {list(INITIATIVE_SIDES)}, a valid single-group roll "
+                        "like '1d20') — Atlas would silently ignore the whole section")
+        return
+    _validate_initiative_sides(raw, failures)
+    side_roll = raw.get("sideRoll")
+    if side_roll is not None and not _default_roll_ok(side_roll):
+        # parseSideRoll: anything but one valid dice group is silently
+        # dropped (the sides then keep whatever order the list gives).
+        failures.append(f"rules.initiative.sideRoll {side_roll!r} is not a single-group roll "
+                        "like '1d6' — Atlas would silently drop it")
+    deck = raw.get("deck")
+    if deck is not None and not (_integer(deck)
+                                 and MIN_INITIATIVE_DECK <= deck <= MAX_INITIATIVE_DECK):
+        # cardParts: a deck outside 2–50 is silently dropped for the default.
+        failures.append(f"rules.initiative.deck {deck!r} is not a whole number "
+                        f"{MIN_INITIATIVE_DECK}–{MAX_INITIATIVE_DECK} — Atlas would silently "
+                        "drop it (the deck holds 10)")
+    # cardParts/hitPointRolls: the switches are stored only where they are
+    # literally true — any other spelling is silently read as off.
+    for switch in ("dealEachRound", "lookAlikesShare", "rollHitPoints"):
+        value = raw.get(switch)
+        if value is not None and not isinstance(value, bool):
+            failures.append(f"rules.initiative.{switch} {value!r} is not true or false — "
+                            "Atlas would silently read it as off")
+
+
+def _validate_initiative_sides(rules: dict, failures: list[str]) -> None:
+    """``parseSideList`` + ``sideParts`` (initiativeSideRules.ts): the list
+    must survive the parse unchanged — every entry live, the built-in two
+    present, at most six named sides beside them, no key but id/name, and
+    the authored ``firstSide`` the first built-in side in the list (a list
+    present, ``sideParts`` takes the order from it, not ``firstSide``)."""
+    where = "rules.initiative.sides"
+    raw = rules.get("sides")
+    if raw is None:
+        return
+    if not isinstance(raw, list):
+        failures.append(f"{where} is not a list — Atlas would silently ignore it "
+                        "(firstSide alone decides the sides' order)")
+        return
+    seen: set[str] = set()
+    named = 0
+    first_builtin: str | None = None
+    for i, side in enumerate(raw):
+        spot = f"{where}[{i}]"
+        if not _is_record(side):
+            failures.append(f"{spot} is not an object — Atlas would silently drop this side")
+            continue
+        extra = [k for k in side if k not in ("id", "name")]
+        if extra:
+            failures.append(f"{spot} carries {', '.join(extra)} — a side keeps only id "
+                            "and name; Atlas ignores the rest")
+        side_id = side.get("id")
+        if not (_is_str(side_id) and side_id.strip() != ""
+                and len(side_id) <= MAX_INITIATIVE_SIDE_ID):
+            failures.append(f"{spot}.id is missing, blank or over "
+                            f"{MAX_INITIATIVE_SIDE_ID} characters — Atlas would silently "
+                            "drop this side")
+            continue
+        if side_id in INITIATIVE_SIDES:
+            if side_id in seen:
+                failures.append(f"{spot}.id {side_id!r} repeats an earlier side — "
+                                "Atlas keeps only the first")
+                continue
+            seen.add(side_id)
+            if first_builtin is None:
+                first_builtin = side_id
+            if side.get("name") is not None:
+                failures.append(f"{spot} names the built-in side {side_id!r} — Atlas would "
+                                "silently drop the name (the built-in sides are translated)")
+            continue
+        name = side.get("name")
+        if not (_is_str(name) and name.strip() != ""):
+            failures.append(f"{spot}.name is missing or blank — Atlas would silently "
+                            "drop this side")
+            continue
+        if side_id in seen:
+            failures.append(f"{spot}.id {side_id!r} repeats an earlier side — "
+                            "Atlas keeps only the first")
+            continue
+        seen.add(side_id)
+        if name.strip() != name:
+            failures.append(f"{spot}.name {name!r} is padded — Atlas would silently trim it")
+        if len(name) > MAX_INITIATIVE_SIDE_NAME:
+            failures.append(f"{spot}.name is over {MAX_INITIATIVE_SIDE_NAME} characters — "
+                            "Atlas would silently cut it")
+        named += 1
+    for builtin in INITIATIVE_SIDES:
+        if builtin not in seen:
+            failures.append(f"{where} does not name the built-in side {builtin!r} — Atlas "
+                            "would silently append it at the end")
+    max_named = MAX_INITIATIVE_SIDES - len(INITIATIVE_SIDES)
+    if named > max_named:
+        failures.append(f"{where} names {named} sides of its own — Atlas keeps at most "
+                        f"{max_named} beside the built-in two and silently drops the rest")
+    if first_builtin is not None and first_builtin != rules.get("firstSide"):
+        failures.append(f"rules.initiative.firstSide {rules.get('firstSide')!r} is not the "
+                        f"first built-in side in sides — Atlas would silently take the "
+                        f"list's order ({first_builtin!r}) instead")
 
 
 def _validate_senses(raw, failures: list[str]) -> frozenset[str] | None:
