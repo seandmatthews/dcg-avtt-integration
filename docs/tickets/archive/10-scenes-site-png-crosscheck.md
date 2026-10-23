@@ -1,6 +1,6 @@
 # 10 — scenes: refuse when the site PNG disagrees with the .uvtt's image
 
-**Status:** proposed
+**Status:** completed (implemented + reviewer-signed-off 2026-10-23, this commit, branch `feature/10-scenes-site-png-crosscheck`)
 **Priority:** P1 — the only silent-wrong-output path found by the review:
 a published scene whose walls/grid fit a different image than the one it
 displays
@@ -66,19 +66,45 @@ copied", which stays true only of the bytes, not the check).
 
 ## Acceptance criteria
 
-- [ ] A site whose PNG dimensions differ from the `.uvtt`'s inline image
+- [x] A site whose PNG dimensions differ from the `.uvtt`'s inline image
       is refused with a plain-words reason naming both sizes, and
       nothing is written — pinned by a new
       `tests/test_scenes.py::test_site_png_disagreeing_with_uvtt_is_refused`
       (asserting the message fragment and `not atlas.exists()`).
-- [ ] A site PNG that is not a readable PNG/JPEG/WebP is refused with
+- [x] A site PNG that is not a readable PNG/JPEG/WebP is refused with
       the plain-words header message — pinned by
       `tests/test_scenes.py::test_site_png_unreadable_is_refused`.
-- [ ] The live repro from Problem no longer publishes: a temp campaign
+- [x] The live repro from Problem no longer publishes: a temp campaign
       with a 128×32 PNG beside the 64×32-embedding `sample.uvtt` exits 2
       with the refusal (recorded in Implementation notes; temp deleted).
-- [ ] README §5.1 states the pair-agreement rule (checkable by reading).
+- [x] README §5.1 states the pair-agreement rule (checkable by reading).
 
-## Implementation notes (YYYY-MM-DD)
+## Implementation notes (2026-10-23)
 
-_lands here when the status flips._
+Landed as the branch's single feat(10) commit on
+`feature/10-scenes-site-png-crosscheck` (this commit — the completed
+status flip and the `archive/` move are folded into it after reviewer
+sign-off, same day). Gates at landing: ruff clean;
+`run-tests.py --all` green — fast tier 154 passed, 1 skipped (the
+optional lit golden), integration tier 1 passed, 1 skipped. All four
+criteria proven; nothing left for a human.
+
+The check sits in `_convert_site` (`publish.py`), **after** the
+importer's own image limits (`checked_cell_size`) and before
+`scene.convert`. Ordering is deliberate: those limits refuse a `.uvtt`
+Atlas could not import by hand either, so they fire first — the first
+cut put the pair check ahead of them and two ticket-05 refusal cases
+(`image-too-large`, `grid-too-small`) surfaced the pair message instead
+of their own; reordered rather than touching their pins. The refusal is
+a plain `ValueError` (the site-level refusal type `_site_files` already
+uses), printed by the existing per-site refuse-and-continue loop; the
+unreadable-PNG case is `pixel_dimensions`' own `ValueError`, unchanged.
+`image_headers.py` untouched, as the ticket expected. The degrade path
+is untouched — it never calls `_convert_site`.
+
+Live repro re-run after the fix (temp campaign under the system temp,
+deleted after): `cave-of-doom.png` 128×32 beside `sample.uvtt` (embeds
+64×32) → exit 2, "refusing cave-of-doom: the site image
+cave-of-doom.png is 128 × 32 but the .uvtt embeds 64 × 32 — regenerate
+the site so the pair agrees", and `atlas-vtt/` absent after the run —
+the same campaign the Problem section published cleanly.

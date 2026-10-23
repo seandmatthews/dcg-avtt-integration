@@ -364,10 +364,15 @@ also    companion note <slug>.md gains the Atlas scene-link line (append-only)
 ```
 
 Idempotent per contract rule 3. `.uvtt` beyond Atlas's limits → refuse with
-the importer's own plain-words reason before writing anything. Conversion
-skips (walls/doors/lights left out, unlit, windows) are printed, not
-swallowed. Atlas's walls-crowding refusal is the *manual* importer's guard,
-not ours (ticket 03) — the publisher writes scenes past it.
+the importer's own plain-words reason before writing anything. The site PNG
+and the `.uvtt`'s embedded image must agree exactly — both come from one
+generator export, and a disagreeing pair (walls fitted to a different image
+than the one the scene displays) is refused naming both sizes before
+anything is written; the PNG's bytes are still only copied, its header is
+read for the check. Conversion skips (walls/doors/lights left out, unlit,
+windows) are printed, not swallowed. Atlas's walls-crowding refusal is the
+*manual* importer's guard, not ours (ticket 03) — the publisher writes
+scenes past it.
 
 **Degrade path (load-bearing):** the vault's detected Atlas version differs
 from the pin (`ATLAS_PIN`, §7) → `scenes` refuses to write `.atlasmap`
