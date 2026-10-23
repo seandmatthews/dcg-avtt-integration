@@ -196,7 +196,11 @@ def _convert_site(site: _Site, cfg: config.AvttConfig | None) -> dict:
 
     Returns the conversion — everything the write stage needs that does
     not depend on the stem. Raises UvttRefused or SceneRefused with the
-    importer's plain-words reason; nothing is written on refusal.
+    importer's plain-words reason, or ValueError when the site's PNG and
+    the ``.uvtt``'s embedded image disagree (ticket 10 — the math below
+    is computed from the embedded image, but Atlas displays the PNG, so
+    a disagreeing pair publishes misaligned walls); nothing is written
+    on refusal.
     """
     document = uvtt.parse(site.uvtt_path)
     size = image_headers.dimensions_of_bytes(document.image_bytes)
@@ -204,6 +208,17 @@ def _convert_site(site: _Site, cfg: config.AvttConfig | None) -> dict:
         raise scene.SceneRefused("The map image in the file could not be read.")
     unit_scale = cfg.grid.unit_scale if cfg is not None and cfg.grid else config.DEFAULT_UNIT_DISTANCE
     farthest = scene.max_light_range(unit_scale, scene.checked_cell_size(document.size, *size))
+    # The pair check (ticket 10) — after the importer's own limits on the
+    # embedded image (those refuse a .uvtt Atlas could not import by hand
+    # either), before any conversion: the math below is computed from the
+    # embedded image, but Atlas displays the site PNG, so a disagreeing
+    # pair would publish misaligned walls.
+    site_size = image_headers.pixel_dimensions(site.image_path)
+    if site_size != size:
+        raise ValueError(f"the site image {site.image_path.name} is "
+                         f"{site_size[0]} × {site_size[1]} but the .uvtt "
+                         f"embeds {size[0]} × {size[1]} — regenerate the "
+                         "site so the pair agrees")
     conversion = scene.convert(document, size, unit_scale, farthest)
     scene.check_placement(conversion)
     return conversion

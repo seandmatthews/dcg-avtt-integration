@@ -526,6 +526,32 @@ def test_incomplete_site_is_refused(tmp_path, capsys):
     assert not (campaign / "atlas-vtt").exists()
 
 
+def test_site_png_disagreeing_with_uvtt_is_refused(tmp_path, capsys):
+    """Ticket 10: the grid/wall math comes from the image embedded in the
+    .uvtt, but the scene's background is the site PNG — a disagreeing pair
+    would publish misaligned walls, so it is refused naming both sizes."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    (campaign / "maps" / "sites" / "demo" / "demo.png").write_bytes(png(128, 32))
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
+    out = capsys.readouterr().out
+    assert "refusing demo" in out
+    assert "the site image demo.png is 128 × 32 but the .uvtt embeds 64 × 32" in out
+    assert "regenerate the site" in out
+    assert not (campaign / "atlas-vtt").exists()
+
+
+def test_site_png_unreadable_is_refused(tmp_path, capsys):
+    """Ticket 10: a site PNG no header reader can parse is refused with
+    the plain-words header message (image_headers.pixel_dimensions)."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    (campaign / "maps" / "sites" / "demo" / "demo.png").write_bytes(b"not a png at all")
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
+    out = capsys.readouterr().out
+    assert "refusing demo" in out
+    assert "does not begin as a PNG, JPEG or WebP" in out
+    assert not (campaign / "atlas-vtt").exists()
+
+
 def test_unknown_site_is_refused(tmp_path, capsys):
     campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
     assert publish.main([str(campaign), "scenes", "--site", "nosuch"]) == 2
