@@ -158,6 +158,85 @@ def test_dice_default_roll_widens_to_groups_initiative_does_not():
     assert presets.validate_preset(preset) == []
 
 
+def test_initiative_widens_to_cards_mode_and_its_knobs():
+    """0.9.0's card-based initiative widened ``rules.initiative`` at the
+    0.9.1 pin: a ``'cards'`` mode plus optional knobs — a ``sides`` list,
+    ``sideRoll``, ``deck``, ``dealEachRound``, ``lookAlikesShare`` and
+    ``rollHitPoints`` (initiativeRules.ts reading initiativeSideRules.ts
+    and initiativeCardRules.ts; ticket 16's source diff). The port draws
+    its usual line: every knob the loader reads as written passes; every
+    shape it would silently drop or repair is refused, naming the knob."""
+    def initiative(block, mode="cards"):
+        preset = valid_preset()
+        preset["rules"]["initiative"] = {"mode": mode, "roll": "1d20",
+                                         "firstSide": "players", **block}
+        return preset
+
+    # the widening's headline: cards mode passes, bare and fully dressed
+    assert presets.validate_preset(initiative({})) == []
+    assert presets.validate_preset(initiative({
+        "deck": 22, "dealEachRound": True, "lookAlikesShare": True,
+        "rollHitPoints": True, "sideRoll": "1d6",
+        "sides": [{"id": "players"}, {"id": "opponents"},
+                  {"id": "elves", "name": "Elves"}],
+    })) == []
+    # sides mode dresses the same way — the OSE 0.9.1 built-in's own shape
+    assert presets.validate_preset(initiative(
+        {"sideRoll": "1d6"}, mode="sides")) == []
+    # the switches read as written off, too — off is their unset spelling —
+    # and a deck of 10 is the default kept-equivalent, no knob lost
+    assert presets.validate_preset(initiative({"dealEachRound": False,
+                                               "lookAlikesShare": False,
+                                               "rollHitPoints": False,
+                                               "deck": 10})) == []
+
+    # every silently-dropped shape is refused, naming the knob
+    both = [{"id": "players"}, {"id": "opponents"}]
+    refused = [
+        ({"deck": 51}, "deck"), ({"deck": 1}, "deck"),
+        ({"deck": "large"}, "deck"), ({"deck": 10.5}, "deck"),
+        ({"dealEachRound": "yes"}, "dealEachRound"),
+        ({"lookAlikesShare": 1}, "lookAlikesShare"),
+        ({"rollHitPoints": "true"}, "rollHitPoints"),
+        # dice-set groups belong to rules.dice.defaultRoll, never here
+        ({"sideRoll": "1d6+1d4"}, "sideRoll"),
+        ({"sideRoll": 6}, "sideRoll"),
+        ({"sides": "both"}, "sides is not a list"),
+        ({"sides": ["players"] + both}, "is not an object"),
+        ({"sides": [{"id": "  "}] + both}, "id is missing, blank"),
+        ({"sides": [{"id": "players", "name": "The Party"},
+                    {"id": "opponents"}]}, "drop the name"),
+        ({"sides": [{"id": "elves", "name": "Elves"},
+                    {"id": "elves", "name": "Elves again"}] + both},
+         "repeats an earlier side"),
+        ({"sides": [{"id": "elves"}] + both}, "name is missing or blank"),
+        ({"sides": [{"id": "elves", "name": " padded "}] + both},
+         "silently trim it"),
+        ({"sides": [{"id": "x" * 65, "name": "X"}] + both}, "over 64 characters"),
+        ({"sides": [{"id": "elves", "name": "E" * 41}] + both},
+         "over 40 characters"),
+        ({"sides": [{"id": "elves", "name": "Elves", "hp": 1}] + both},
+         "keeps only id and name"),
+        ({"sides": both[:1]}, "does not name the built-in side 'opponents'"),
+        ({"sides": [{"id": f"s{n}", "name": f"S{n}"} for n in range(7)] + both},
+         "keeps at most 6"),
+        # a list present takes its order, not firstSide (sideParts)
+        ({"sides": [{"id": "opponents"}, {"id": "players"}]},
+         "take the list's order"),
+    ]
+    for block, fragment in refused:
+        failures = presets.validate_preset(initiative(block))
+        assert any(fragment in failure for failure in failures), (block, failures)
+
+    # the whole-section refusal names the widened vocabulary
+    failures = presets.validate_preset(
+        broken(valid_preset(), **{"rules.initiative": {"mode": "tarot",
+                                                       "roll": "1d20",
+                                                       "firstSide": "players"}}))
+    assert any("rules.initiative is not usable" in failure
+               and "'cards'" in failure for failure in failures), failures
+
+
 def test_unit_distance_bounds_are_inclusive():
     """0.7.1 tightened the preset validator: ``gridDefaults.unitDistance``
     is routed through ``isUnitDistance`` (presetValidation.ts:59), which
@@ -334,16 +413,16 @@ def test_default_token_vision_legacy_fields_vs_senses_list():
 
 
 def test_builtin_systems_match_the_pinned_release():
-    """The short-circuit set is Atlas's own built-in ids at 0.8.0
+    """The short-circuit set is Atlas's own built-in ids at 0.9.1
     (builtInPresetId keys, builtInPresets.ts + presets/*.ts) — the same
-    ten files as at 0.7.1, ``builtInPresets.ts`` unchanged between the
-    tags, re-verified 2026-10-20 against tag 0.8.0 (commit 3d68221) in
-    ticket 09's source diff."""
-    assert presets.BUILTIN_SYSTEMS_0_8_0 == frozenset({
+    nine files and keys as at 0.8.0, ``builtInPresets.ts`` unchanged
+    between the tags, re-verified 2026-10-23 against tag 0.9.1 (commit
+    5499fd8) in ticket 16's source diff."""
+    assert presets.BUILTIN_SYSTEMS_0_9_1 == frozenset({
         "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
         "drawsteel", "ose", "pathfinder2e", "shadowdark",
     })
-    assert set(presets.BUILTIN_DISPLAY_NAMES_0_8_0) == set(presets.BUILTIN_SYSTEMS_0_8_0)
+    assert set(presets.BUILTIN_DISPLAY_NAMES_0_9_1) == set(presets.BUILTIN_SYSTEMS_0_9_1)
 
 
 def test_shipped_icrpg_pack_validates_clean():

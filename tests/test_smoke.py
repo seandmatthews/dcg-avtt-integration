@@ -27,7 +27,7 @@ def test_module_imports(module):
     (scene, "convert"), (scene, "dumps"),
     (records, "map_record"), (records, "scene_record"),
     (presets, "validate_preset"), (presets, "install"),
-    (presets, "load_pack_preset"), (presets, "BUILTIN_SYSTEMS_0_8_0"),
+    (presets, "load_pack_preset"), (presets, "BUILTIN_SYSTEMS_0_9_1"),
     (config, "AvttConfig"), (config, "load"),
     (_version, "VERSION"), (_version, "ATLAS_PIN"),
     (_version, "detect_atlas_version"),
