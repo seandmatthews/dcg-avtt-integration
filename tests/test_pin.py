@@ -46,13 +46,18 @@ def icrpg_campaign(tmp_path: Path) -> Path:
 
 def test_atlas_pin_matches_fixtures():
     """The fixture set is the pin's source of truth; the constant is its
-    machine handle (ticket 07, proposal 2): ``golden-{ATLAS_PIN}/`` must
-    exist, or the pin is prose again."""
-    golden = ROOT / "fixtures" / f"golden-{_version.ATLAS_PIN}"
-    assert golden.is_dir(), (
-        f"ATLAS_PIN={_version.ATLAS_PIN!r} has no fixtures/"
-        f"golden-{_version.ATLAS_PIN}/ directory — a pin without its "
-        "golden fixture directory is not a pin")
+    machine handle (ticket 07, proposal 2): the *capture*
+    ``golden-{ATLAS_PIN}/sample.atlasmap`` must exist — a README-only
+    directory is the documented intermediate shape of a bump, not a pin
+    (ticket 12)."""
+    golden = ROOT / "fixtures" / f"golden-{_version.ATLAS_PIN}" / "sample.atlasmap"
+    assert golden.is_file(), (
+        f"ATLAS_PIN={_version.ATLAS_PIN!r} has no captured "
+        f"fixtures/golden-{_version.ATLAS_PIN}/sample.atlasmap — a pin "
+        "without its golden capture is not a pin; capture it with "
+        f"`tools/capture-golden.py {_version.ATLAS_PIN}` "
+        "(automated, fixtures/README.md) and commit the fixture in the "
+        "same change as the pin")
 
 
 def test_readme_table_carries_the_pin():

@@ -462,10 +462,16 @@ golden fixture:
 
 The pin is machine-readable (ticket 07): `src/avtt/_version.py` declares
 `ATLAS_PIN` — the machine handle for the row above — alongside `VERSION`,
-this repo's companion version (mirroring `pyproject.toml`). The fixture
-directory `fixtures/golden-<ATLAS_PIN>/` is the pin's source of truth, and
+this repo's companion version (mirroring `pyproject.toml`). The captured
+fixture `fixtures/golden-<ATLAS_PIN>/sample.atlasmap` is the pin's source
+of truth — a directory without the capture is not a pin — and
 `tests/test_pin.py::test_atlas_pin_matches_fixtures` holds constant and
-fixture together. `publish.py <campaign> version` prints the companion
+fixture together. A missing fixture fails the golden test and
+`run-tests.py --all` outright, never silently skips (the capture is
+automated: `tools/capture-golden.py <version>`); setting
+`AVTT_GOLDEN_VERSION=<version>` points the golden tests at another
+committed capture instead — §8 step 3's pre-flip check.
+`publish.py <campaign> version` prints the companion
 version, the pin, and the Atlas version detected in the vault's plugin
 manifest (`.obsidian/plugins/atlas-vtt/manifest.json`; missing or
 unreadable → `unknown`). On a mismatch `presets` prints
@@ -485,7 +491,11 @@ Atlas shipped 0.5.0 → 0.6.0 in three days; assume monthly breakage.
    breaking until the golden test passes.
 2. Install the new Atlas, import `fixtures/sample.uvtt`, commit the result
    as `fixtures/golden-<new>/`.
-3. Run the suite against both goldens; move the pin only when green.
+3. Run the suite against both goldens; move the pin only when green —
+   the new one *before* the flip: `AVTT_GOLDEN_VERSION=<new> python
+   run-tests.py --all` (the golden tests read that fixture), then the
+   pin's own after the flip. A missing golden fixture fails the run,
+   never silently skips.
 4. If red and the fix is nontrivial: ship the `_inbox/` degrade path and
    open the fix as a milestone, don't hack the port to pass.
 5. One commit per pin bump (ticket 07): the `ATLAS_PIN` constant, the new

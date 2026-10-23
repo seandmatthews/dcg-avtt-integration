@@ -6,12 +6,12 @@ pin-integrity test keeps the two in step) and every release is
 git-tagged ``v<VERSION>``; consumers pin tags, never main (README §8).
 
 ``ATLAS_PIN`` is the machine handle for the pinned Atlas release whose
-human record is the README §7 table. The fixture directory
-``fixtures/golden-{ATLAS_PIN}/`` is the pin's source of truth;
-``tests/test_pin.py`` holds constant and fixture together. This module
-is the one place the pin lives: docstrings and messages elsewhere cite
-it instead of restating a version (the demotion rule of ticket 07), so
-a pin bump moves the constant, the golden fixture, the README table
+human record is the README §7 table. The captured fixture
+``fixtures/golden-{ATLAS_PIN}/sample.atlasmap`` is the pin's source of
+truth; ``tests/test_pin.py`` holds constant and fixture together. This
+module is the one place the pin lives: docstrings and messages elsewhere
+cite it instead of restating a version (the demotion rule of ticket 07),
+so a pin bump moves the constant, the golden fixture, the README table
 row and ``VERSION`` in one commit.
 
 Detection reads the vault's *Obsidian plugin config*, never

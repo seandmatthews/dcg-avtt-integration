@@ -2,11 +2,13 @@
 testing disciplines of README §7 that land with it (1–4; discipline 5
 lives in tests/test_presets.py).
 
-The golden-file test (discipline 1) additionally needs a fixture only a
-human can capture — import ``fixtures/sample.uvtt`` in the Atlas UI at
-the pinned version and commit the result under
-``fixtures/golden-<version>/`` (fixtures/README.md); until then it
-skips, as its placeholder did in the deleted tests/test_disciplines.py.
+The golden-file test (discipline 1) reads the capture under
+``fixtures/golden-<version>/`` (fixtures/README.md). Its absence is a
+failure, never a skip (ticket 12): the capture is automated
+(``tools/capture-golden.py``) and lands in the same change as the pin,
+so the only state in which a skip could fire is the broken one. Only
+the optional lit variant keeps its skip — that capture is genuinely
+optional (fixtures/README.md).
 """
 
 from __future__ import annotations
@@ -24,13 +26,26 @@ from avtt import _version, config, image_headers, publish, records, scene, uvtt
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "fixtures"
-GOLDEN = FIXTURES / f"golden-{_version.ATLAS_PIN}" / "sample.atlasmap"
-GOLDEN_LIT = FIXTURES / f"golden-{_version.ATLAS_PIN}" / "sample-lit.atlasmap"
+GOLDEN_VERSION_ENV = "AVTT_GOLDEN_VERSION"
 
 SAMPLE = FIXTURES / "sample.uvtt"
 
 
 # --- helpers -----------------------------------------------------------------
+
+
+def golden_version() -> str:
+    """The golden version under test: the ``AVTT_GOLDEN_VERSION``
+    override when set, else the pin — README §8 step 3's pre-flip
+    handle, so a bump can prove the new capture green *before* the pin
+    flips (ticket 12)."""
+    return os.environ.get(GOLDEN_VERSION_ENV) or _version.ATLAS_PIN
+
+
+def golden_dir() -> Path:
+    """The golden fixture directory the golden tests read (the override
+    above decides which; the pin's own by default)."""
+    return FIXTURES / f"golden-{golden_version()}"
 
 
 def sample_png_bytes() -> bytes:
@@ -393,27 +408,54 @@ def _assert_structurally_equal(golden, ours, path="$", tolerance=1e-9):
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not GOLDEN.is_file(),
-                    reason="needs fixtures/golden-%s/sample.atlasmap, captured by a "
-                           "human from the Atlas UI (fixtures/README.md)"
-                           % _version.ATLAS_PIN)
 def test_golden_file():
-    """§7.1: the port's output matches the captured .atlasmap structurally."""
-    golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    """§7.1: the port's output matches the captured .atlasmap
+    structurally. The fixture is required (ticket 12): a missing capture
+    fails here naming the capture command — never a skip, which is how a
+    pin bump could merge with zero golden verification."""
+    golden = golden_dir() / "sample.atlasmap"
+    assert golden.is_file(), (
+        f"missing golden fixture: {golden} — a pin without its capture is "
+        f"not a pin; capture it with `tools/capture-golden.py "
+        f"{golden_version()}` (automated, fixtures/README.md) and commit "
+        "the fixture in the same change as the pin")
+    payload = json.loads(golden.read_text(encoding="utf-8"))
     envelope = scene.scene_file(convert_sample(),
                                 "atlas-vtt/collections/demo/maps/demo.png")
-    _assert_structurally_equal(golden, envelope)
+    _assert_structurally_equal(payload, envelope)
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(not GOLDEN_LIT.is_file(),
-                    reason="optional second capture (sample-lit.uvtt) not present")
+@pytest.mark.skipif(not golden_dir().joinpath("sample-lit.atlasmap").is_file(),
+                    reason="optional second capture (sample-lit.uvtt) not "
+                           "present — genuinely optional (fixtures/README.md)")
 def test_golden_file_lit_variant():
     """The luma branch against the real app, when the optional capture exists."""
-    golden = json.loads(GOLDEN_LIT.read_text(encoding="utf-8"))
+    golden = golden_dir() / "sample-lit.atlasmap"
+    payload = json.loads(golden.read_text(encoding="utf-8"))
     envelope = scene.scene_file(convert_sample(uvtt.parse(FIXTURES / "sample-lit.uvtt")),
                                 "atlas-vtt/collections/demo/maps/demo.png")
-    _assert_structurally_equal(golden, envelope)
+    _assert_structurally_equal(payload, envelope)
+
+
+def test_golden_override(monkeypatch):
+    """Ticket 12 / README §8 step 3: ``AVTT_GOLDEN_VERSION`` resolves the
+    fixture directory the golden tests read, so a pin bump can prove the
+    new capture green *before* the pin flips. Unset, the resolution is
+    the pin's own directory (the default run)."""
+    monkeypatch.delenv(GOLDEN_VERSION_ENV, raising=False)
+    assert golden_version() == _version.ATLAS_PIN
+    assert golden_dir() == FIXTURES / f"golden-{_version.ATLAS_PIN}"
+
+    # any other committed capture stands in for "the new golden"
+    others = sorted(path.name for path in FIXTURES.glob("golden-*")
+                    if path.name != f"golden-{_version.ATLAS_PIN}"
+                    and (path / "sample.atlasmap").is_file())
+    assert others, "no second committed golden to prove the override against"
+    version = others[0].removeprefix("golden-")
+    monkeypatch.setenv(GOLDEN_VERSION_ENV, version)
+    assert golden_version() == version
+    assert golden_dir() == FIXTURES / f"golden-{version}"
 
 
 # --- discipline 2: round-trip determinism --------------------------------------
