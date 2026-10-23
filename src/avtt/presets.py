@@ -33,7 +33,14 @@ The write obeys contract rule 3: refuse-on-diff at
 ``system-presets/<stem>.json``; ``--force`` writes a ``<stem>-v2``
 sibling instead of overwriting. Atlas keys presets by the ``id``
 inside the file, never the path (``presetFiles.ts``), and keeps the
-first file per id, so a ``-v2`` sibling never overrides the original.
+first file per id in path order (``RecordFiles.entries`` over
+``holders``: every record path, UTF-16 code-unit sort, extension
+included — so ``icrpg-v2.json`` sorts *before* ``icrpg.json``, and a
+same-id ``-v2`` sibling, not the original, is the live one; re-read at
+0.8.0, ticket 11). A same-id file sorting before the target would make
+the pack's file inert — a knob the DM believes is live but is not — so
+:func:`install` refuses the shadowed write; one sorting after the
+target is dead weight and only draws a warning.
 """
 
 from __future__ import annotations
@@ -767,7 +774,79 @@ def target_state(atlas_dir: Path, stem: str, payload: dict) -> str:
     return "same" if _preset_body(existing) == _preset_body(preset_payload(payload)) else "differs"
 
 
-def install(preset_path: Path, atlas_dir: Path, *, stem: str, force: bool = False) -> Path:
+def _carried_id(path: Path) -> str | None:
+    """The id ``path`` carries, or None when it carries no preset.
+
+    Mirrors ``readRecordText`` (``recordFolder.ts``): a file only holds
+    a preset when it parses to a JSON object whose ``id`` is a non-blank
+    string outside the ``builtin:`` prefix — anything else holds no
+    record (``RecordFiles`` keeps a ``null`` for it) and cannot shadow
+    anything.
+    """
+    try:
+        payload = load_preset_file(path)
+    except (PresetRefused, OSError, ValueError):
+        # not JSON / not UTF-8 / unreadable — no id, no shadow; a
+        # UnicodeDecodeError from read_text is a ValueError load_preset_file
+        # does not wrap, and a foreign file must never crash the scan.
+        return None
+    preset_id = payload.get("id")
+    if not _non_empty_str(preset_id) or preset_id.startswith(BUILT_IN_ID_PREFIX):
+        return None
+    return preset_id
+
+
+def same_id_siblings(presets_dir: Path, target_name: str,
+                     preset_id: str) -> tuple[list[str], list[str]]:
+    """Other preset files under ``presets_dir`` carrying ``preset_id``,
+    as ``(shadows, dead_weight)`` — paths relative to ``presets_dir``
+    in POSIX form, each list sorted by the order Atlas enumerates.
+
+    That order is the one ``RecordFiles.holders`` uses: every record
+    path in byte order, extension included, and the folder is read
+    recursively with a case-insensitive ``.json`` check
+    (``recordFolder.ts`` ``isRecordPath``, ``RecordFiles.readFolder``) —
+    so the scan walks subfolders too, not just siblings beside the
+    target. ``shadows`` are the same-id files sorting *before*
+    ``target_name`` (Atlas reads the first of them and ignores the
+    target); ``dead_weight`` those sorting after (inert now, live again
+    the day the target is removed). A missing ``presets_dir`` holds
+    nothing.
+    """
+    shadows: list[str] = []
+    dead_weight: list[str] = []
+    if not presets_dir.is_dir():
+        return shadows, dead_weight
+    target_key = target_name.encode("utf-8")
+    for path in presets_dir.rglob("*"):
+        if not path.is_file() or not path.name.lower().endswith(".json"):
+            continue
+        relative = path.relative_to(presets_dir).as_posix()
+        if relative == target_name or _carried_id(path) != preset_id:
+            continue
+        listed = shadows if relative.encode("utf-8") < target_key else dead_weight
+        listed.append(relative)
+    shadows.sort(key=lambda name: name.encode("utf-8"))
+    dead_weight.sort(key=lambda name: name.encode("utf-8"))
+    return shadows, dead_weight
+
+
+def shadowed_write_reason(target_name: str, shadow: str, preset_id: str) -> str:
+    """The plain-words refusal for the shadowed write (ticket 11)."""
+    return (f"not writing {target_name}: {shadow} already carries id {preset_id} and "
+            "sorts first, so Atlas would keep reading it — delete or rename the old "
+            "file, or edit it by hand")
+
+
+def dead_weight_note(name: str, preset_id: str, target_name: str) -> str:
+    """The one-line warning for a same-id file sorting after the target."""
+    return (f"warning: {name} carries the same id {preset_id!r} and sorts after "
+            f"{target_name} — Atlas reads {target_name} and ignores it, but it becomes "
+            f"live again if {target_name} is ever removed; delete it by hand")
+
+
+def install(preset_path: Path, atlas_dir: Path, *, stem: str, force: bool = False,
+            warnings: list[str] | None = None) -> Path:
     """Validate a preset file, then copy it to
     ``<atlas_dir>/system-presets/<stem>.json``.
 
@@ -777,6 +856,17 @@ def install(preset_path: Path, atlas_dir: Path, *, stem: str, force: bool = Fals
     inside the file, so the sibling is a real second copy, not a rename).
     The sibling itself is refuse-on-diff too: ``--force`` twice in a row
     on a moved table ends in a refusal, not a clobber.
+
+    The shadowed-write check (ticket 11): once the effective target is
+    known — plain stem, or the ``-v2`` sibling after ``--force`` — any
+    other file under ``system-presets/`` carrying the same id and
+    sorting before it is the one Atlas reads (first file per id), so
+    the target would be inert; the install refuses, nothing written,
+    even when the target already matches (a "success" for a file Atlas
+    will never read is the failure this check exists to kill). A
+    same-id file sorting after the target is dead weight: the install
+    proceeds and appends one plain-words line per file to ``warnings``
+    (when given) for the caller to print.
 
     Returns the path that holds the pack's preset after the call —
     written now, or the identical file already there. Raises
@@ -792,8 +882,6 @@ def install(preset_path: Path, atlas_dir: Path, *, stem: str, force: bool = Fals
     presets_dir = atlas_dir / SYSTEM_PRESETS_DIRNAME
     target = presets_dir / f"{stem}.json"
     state = target_state(atlas_dir, stem, payload)
-    if state == "same":
-        return target
     if state == "differs" and not force:
         raise PresetRefused(f"{target} exists and differs — nothing was overwritten "
                             f"(contract rule 3); rerun with --force to write a "
@@ -801,12 +889,19 @@ def install(preset_path: Path, atlas_dir: Path, *, stem: str, force: bool = Fals
     if state == "differs" and force:
         sibling = presets_dir / f"{stem}-v2.json"
         sibling_state = target_state(atlas_dir, f"{stem}-v2", payload)
-        if sibling_state == "same":
-            return sibling
         if sibling_state == "differs":
             raise PresetRefused(f"{sibling} exists and differs too — resolve by hand; "
                                 "nothing was written")
         target = sibling
+        state = sibling_state
+    shadows, dead_weight = same_id_siblings(presets_dir, target.name, payload["id"])
+    if shadows:
+        raise PresetRefused(shadowed_write_reason(target.name, shadows[0], payload["id"]))
+    if warnings is not None:
+        for name in dead_weight:
+            warnings.append(dead_weight_note(name, payload["id"], target.name))
+    if state == "same":
+        return target
     presets_dir.mkdir(parents=True, exist_ok=True)
     written = preset_payload(payload)
     target.write_text(json.dumps(written, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

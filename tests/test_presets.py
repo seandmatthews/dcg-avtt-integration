@@ -1,11 +1,15 @@
-"""The presets publisher's pins (ticket 04; discipline 5, README §7.5).
+"""The presets publisher's pins (ticket 04; discipline 5, README §7.5;
+the shadowed write — ticket 11).
 
 The validator port must refuse every preset Atlas's own loader would
 ignore — and every preset Atlas would silently *alter* (a dropped
 widget entry, a clamped light radius), because a knob the DM believes
 is live but is not is the same failure at the table. The write pins are
 contract rule 3: refuse-on-diff, ``--force`` writes a ``-v2`` sibling,
-and the built-in-system short-circuit writes nothing at all.
+and the built-in-system short-circuit writes nothing at all. Ticket 11
+adds the shadowed write: Atlas keeps the first file per id in path
+order, so a same-id file sorting before the target makes the pack's
+file inert — refused; one sorting after is dead weight — warned.
 """
 
 from __future__ import annotations
@@ -440,6 +444,137 @@ def test_install_refuses_an_unreadable_target(tmp_path, pack_file):
     target.write_text("{not json", encoding="utf-8")
     with pytest.raises(presets.PresetRefused, match="exists and differs"):
         presets.install(pack_file, atlas, stem="testpack")
+
+
+# --- the shadowed write (ticket 11) -----------------------------------------
+#
+# Atlas keys system presets by the id inside the file and keeps the first
+# file per id in path order (RecordFiles.ts entries()/holders(), 0.8.0:
+# every record path in UTF-16 code-unit sort, extension included, folders
+# read recursively — recordFolder.ts isRecordPath). So a same-id file
+# sorting before the target is the one Atlas reads; the pack's file would
+# be inert and any success report a lie.
+
+
+def test_shadowed_write_is_refused(tmp_path, campaign, capsys):
+    """The ticket's live repro: the DM's hand-made `icrpg-house.json`
+    (same id as the pack) sits beside no `icrpg.json`. Before ticket 11
+    the installer wrote `icrpg.json` and reported success for a file
+    Atlas would never read; now it refuses, naming both files, and
+    writes nothing — the planted file included."""
+    stale = tmp_path / "atlas-vtt" / "system-presets" / "icrpg-house.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text(json.dumps({"id": "icrpg-house", "name": "ICRPG (house)"}),
+                     encoding="utf-8")
+    planted = stale.read_text(encoding="utf-8")
+    rc = publish.main([str(tmp_path), "presets"])
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "refusing: not writing icrpg.json" in out
+    assert "icrpg-house.json" in out and "id icrpg-house" in out
+    assert "sorts first" in out
+    assert not (tmp_path / "atlas-vtt" / "system-presets" / "icrpg.json").exists()
+    assert stale.read_text(encoding="utf-8") == planted, "the old file was touched"
+
+
+def test_shadowing_write_warns(tmp_path, campaign, capsys):
+    """A same-id file sorting *after* the target leaves the pack's file
+    the live one (Atlas keeps the first per id) — the install proceeds
+    and prints one warning line naming the dead-weight file."""
+    stale = tmp_path / "atlas-vtt" / "system-presets" / "zz-stale-icrpg.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text(json.dumps({"id": "icrpg-house", "name": "ICRPG (house)"}),
+                     encoding="utf-8")
+    planted = stale.read_text(encoding="utf-8")
+    rc = publish.main([str(tmp_path), "presets"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "wrote" in out
+    naming = [line for line in out.splitlines() if "zz-stale-icrpg.json" in line]
+    assert len(naming) == 1 and naming[0].startswith("warning:"), out
+    assert "sorts after icrpg.json" in naming[0]
+    target = tmp_path / "atlas-vtt" / "system-presets" / "icrpg.json"
+    assert json.loads(target.read_text(encoding="utf-8"))["id"] == "icrpg-house"
+    assert stale.read_text(encoding="utf-8") == planted, "the dead weight was touched"
+
+
+def test_shadowed_write_refuses_even_when_target_already_matches(tmp_path, pack_file):
+    """The idempotent rerun is the same lie: an already-matching target
+    beside an earlier-sorting same-id file is inert, so "already
+    matches — nothing written" must not be reported as success."""
+    atlas = tmp_path / "atlas-vtt"
+    presets.install(pack_file, atlas, stem="testpack")
+    stale = atlas / "system-presets" / "aa-shadow.json"  # 'aa-' sorts before 'testpack'
+    stale.write_text(json.dumps({"id": "pack-test", "name": "Shadow"}), encoding="utf-8")
+    with pytest.raises(presets.PresetRefused, match="not writing testpack.json"):
+        presets.install(pack_file, atlas, stem="testpack")
+
+
+def test_force_sibling_is_dead_weight_not_shadow_when_ids_match(tmp_path, pack_file):
+    """Path sort includes the extension, so `testpack-v2.json` sorts
+    *before* `testpack.json` (hyphen 0x2D < dot 0x2E): after --force the
+    sibling is the live file and the differing original is the dead
+    weight — installed, with a warning naming it (the 0.8.0 correction
+    of "a -v2 sibling never overrides the original")."""
+    atlas = tmp_path / "atlas-vtt"
+    target = atlas / "system-presets" / "testpack.json"
+    target.parent.mkdir(parents=True)
+    hand_tuned = valid_preset()
+    hand_tuned["name"] = "Hand-tuned"
+    target.write_text(json.dumps(hand_tuned), encoding="utf-8")
+    notes: list[str] = []
+    result = presets.install(pack_file, atlas, stem="testpack", force=True,
+                             warnings=notes)
+    assert result == atlas / "system-presets" / "testpack-v2.json"
+    assert len(notes) == 1 and "testpack.json" in notes[0], notes
+    assert "sorts after testpack-v2.json" in notes[0]
+
+
+def test_same_id_file_in_a_subfolder_is_seen(tmp_path, pack_file):
+    """Atlas reads the presets folder recursively (RecordFiles.readFolder
+    over recordFolder.ts isRecordPath), so a same-id file below a
+    subfolder shadows by full-path order too: 'archive/...' sorts before
+    'testpack.json'."""
+    atlas = tmp_path / "atlas-vtt"
+    deep = atlas / "system-presets" / "archive" / "old-pack.json"
+    deep.parent.mkdir(parents=True)
+    deep.write_text(json.dumps({"id": "pack-test", "name": "Old"}), encoding="utf-8")
+    with pytest.raises(presets.PresetRefused,
+                       match="archive/old-pack.json already carries id pack-test"):
+        presets.install(pack_file, atlas, stem="testpack")
+
+
+def test_foreign_files_do_not_shadow(tmp_path, pack_file):
+    """Only a file carrying the id counts (readRecordText: a JSON object
+    with a non-blank id outside 'builtin:'): broken JSON, a non-UTF-8
+    byte string, a missing id and a built-in's id all hold no preset."""
+    presets_dir = tmp_path / "atlas-vtt" / "system-presets"
+    presets_dir.mkdir(parents=True)
+    (presets_dir / "aa-broken.json").write_text("{not json", encoding="utf-8")
+    (presets_dir / "aa-bytes.json").write_bytes(b"\xff\xfe\x00id")
+    (presets_dir / "aa-noid.json").write_text('{"name": "No id"}', encoding="utf-8")
+    (presets_dir / "aa-builtin.json").write_text(
+        json.dumps({"id": "builtin:dnd5e", "name": "Built in"}), encoding="utf-8")
+    notes: list[str] = []
+    result = presets.install(pack_file, tmp_path / "atlas-vtt", stem="testpack",
+                             warnings=notes)
+    assert result == presets_dir / "testpack.json"
+    assert notes == []
+
+
+def test_dry_run_refuses_the_shadowed_write(tmp_path, campaign, capsys):
+    """The dry run's exit code mirrors the plan, and the plan now
+    includes the shadowed-write refusal."""
+    stale = tmp_path / "atlas-vtt" / "system-presets" / "icrpg-house.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text(json.dumps({"id": "icrpg-house", "name": "ICRPG (house)"}),
+                     encoding="utf-8")
+    rc = publish.main([str(tmp_path), "presets", "--dry-run"])
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "would REFUSE: not writing icrpg.json" in out
+    assert "icrpg-house.json" in out
+    assert not (tmp_path / "atlas-vtt" / "system-presets" / "icrpg.json").exists()
 
 
 # --- the gate + the CLI (README §5.2) --------------------------------------

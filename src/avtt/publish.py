@@ -583,9 +583,10 @@ def run_presets(campaign: Path, pack: str, force: bool, dry_run: bool) -> int:
     state = presets.target_state(atlas_dir, pack, payload)
     if dry_run:
         return _dry_run_plan(atlas_dir, pack, payload, force)
+    notes: list[str] = []  # ticket 11: dead-weight same-id files, printed after the outcome
     try:
         result = presets.install(presets.pack_preset_path(pack), atlas_dir,
-                                 stem=pack, force=force)
+                                 stem=pack, force=force, warnings=notes)
     except presets.PresetRefused as exc:
         print(f"refusing: {exc}")
         return 2
@@ -593,6 +594,8 @@ def run_presets(campaign: Path, pack: str, force: bool, dry_run: bool) -> int:
         print(f"{result} already matches the pack — nothing written")
     else:
         print(f"wrote {result}")
+    for note in notes:
+        print(note)
     return 0
 
 
@@ -611,31 +614,42 @@ def run_version(campaign: Path) -> int:
 
 def _dry_run_plan(atlas_dir: Path, pack: str, payload: dict, force: bool) -> int:
     """Print the exact file plan and the first divergence; write nothing."""
-    target = atlas_dir / presets.SYSTEM_PRESETS_DIRNAME / f"{pack}.json"
+    presets_dir = atlas_dir / presets.SYSTEM_PRESETS_DIRNAME
+    target = presets_dir / f"{pack}.json"
     print(f"dry run — file plan for pack '{pack}':")
     print(f"  plan: {target}")
     state = presets.target_state(atlas_dir, pack, payload)
-    if state == "missing":
-        print("  would write it (the system-presets folder is created if missing)")
-        return 0
-    if state == "same":
-        print("  already matches the pack — would write nothing")
-        return 0
-    if not force:
+    if state == "differs" and not force:
         print(f"  would REFUSE: it exists and differs (contract rule 3) — rerun with "
               f"--force to write a '{pack}-v2' sibling beside it")
         return 2
-    sibling = atlas_dir / presets.SYSTEM_PRESETS_DIRNAME / f"{pack}-v2.json"
-    sibling_state = presets.target_state(atlas_dir, f"{pack}-v2", payload)
-    if sibling_state == "missing":
-        print(f"  {target.name} differs — would write {sibling.name} instead, "
-              "leaving the original untouched")
-        return 0
-    if sibling_state == "same":
-        print(f"  {sibling.name} already matches the pack — would write nothing")
-        return 0
-    print(f"  would REFUSE: {sibling.name} exists and differs too — resolve by hand")
-    return 2
+    if state == "differs" and force:
+        sibling = presets_dir / f"{pack}-v2.json"
+        sibling_state = presets.target_state(atlas_dir, f"{pack}-v2", payload)
+        if sibling_state == "missing":
+            target = sibling
+            print(f"  {pack}.json differs — would write {sibling.name} instead, "
+                  "leaving the original untouched")
+        elif sibling_state == "same":
+            target = sibling
+            print(f"  {sibling.name} already matches the pack — would write nothing")
+        else:
+            print(f"  would REFUSE: {sibling.name} exists and differs too — resolve by hand")
+            return 2
+    elif state == "missing":
+        print("  would write it (the system-presets folder is created if missing)")
+    else:
+        print("  already matches the pack — would write nothing")
+    # ticket 11: the shadowed write would be refused for real, so the plan
+    # says so — and the dead-weight warning prints here too.
+    shadows, dead_weight = presets.same_id_siblings(presets_dir, target.name, payload["id"])
+    for name in dead_weight:
+        print("  " + presets.dead_weight_note(name, payload["id"], target.name))
+    if shadows:
+        print("  would REFUSE: " + presets.shadowed_write_reason(target.name, shadows[0],
+                                                                 payload["id"]))
+        return 2
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
