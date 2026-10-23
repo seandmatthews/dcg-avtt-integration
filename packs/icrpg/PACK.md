@@ -32,12 +32,14 @@ machine-checked) of the table's own hand-authored preset:
 > runtime state). The file the table already runs *is* the house ruling.
 
 Nothing was added, removed, or edited — not even the `id`/`name` — so the
-pack preset and the table's existing file are one preset to Atlas (same
-id, `icrpg-house`): installing the pack into a vault that already carries
-the DM's hand-made file leaves both in place, and Atlas keys presets by
-id, keeping the first (`icrpg-house.json` sorts before `icrpg.json`).
-The DM edits values **here** (in the pack) from now on; the installer is
-the only writer.
+pack preset and the table's hand-made file are one preset to Atlas (same
+id, `icrpg-house`), and a vault that still carries the DM's hand-made
+`icrpg-house.json` would shadow the pack forever: Atlas keys presets by
+id, keeping the first file per id, and `icrpg-house.json` sorts before
+`icrpg.json`. The installer refuses that shadowed write (ticket 11), so
+the stale hand-made file must be deleted **once** — after that the pack
+is the single source. The DM edits values **here** (in the pack) from
+now on; the installer is the only writer.
 
 | knob (DESIGN §13 item) | Atlas surface | value | source |
 |---|---|---|---|
