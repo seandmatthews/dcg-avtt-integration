@@ -315,7 +315,9 @@ live number in ICRPG packs stays the preset's hearts resource.
 ```
 dcg-avtt-integration/
   README.md                 this file
-  run-tests.py              the gate: fast tier; --all adds the golden tier
+  run-tests.py              the gate: the whole suite, golden tests
+                            included; --all adds the integration-only
+                            golden pass (§8)
   src/avtt/
     uvtt.py                 .uvtt parsing (fields + limits, plain-words refusals)
     image_headers.py        stdlib PNG/JPEG/WebP dimension readers

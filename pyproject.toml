@@ -13,7 +13,10 @@ dependencies = [
 # path (see [tool.pytest.ini_options] below and run-tests.py).
 
 [dependency-groups]
-dev = ["pytest>=8"]
+# ruff rides in the lock with everything else: CI installs via
+# `uv sync --locked` (ticket 13), so a floating lint binary there would
+# be the untested combination the lock exists to prevent.
+dev = ["pytest>=8", "ruff>=0.8"]
 
 [tool.ruff]
 # Lint = the runtime-crash class only (syntax errors, undefined names,
@@ -27,7 +30,10 @@ lint.select = ["E4", "E7", "E9", "F"]
 pythonpath = ["src"]
 testpaths = ["tests"]
 markers = [
-    # The golden-file suite needs a fixture captured from a real Atlas UI
-    # import (README §7.1) — it runs where that fixture exists.
-    "integration: needs fixtures/golden-<version>/ captured from the Atlas UI",
+    # The golden-file suite (README §7.1) reads the pin's committed
+    # capture fixtures/golden-<version>/sample.atlasmap. No addopts on
+    # purpose (ticket 13): the plain suite is the whole suite — the
+    # marker exists so `run-tests.py --all` / README §8 can run the
+    # golden tests in isolation, never to deselect them.
+    "integration: golden-file tests; run isolated via `run-tests.py --all`",
 ]
