@@ -798,6 +798,28 @@ def test_companion_note_recognizes_any_link_shape(tmp_path, note_text):
     assert note.read_text(encoding="utf-8") == note_text
 
 
+@pytest.mark.parametrize("note_text,carries", [
+    ("A different file: [[demo.atlasmap-old]] is not this scene.\n", False),
+    ("A different file: [[demo.atlasmaps]] is not this scene either.\n", False),
+    ("Plain [[demo.atlasmap]] counts.\n", True),
+    ("Alias ![[demo.atlasmap|Scene]] counts.\n", True),
+    ("Subpath [[demo.atlasmap#fog]] counts.\n", True),
+])
+def test_note_link_detection_is_anchored(tmp_path, note_text, carries):
+    """Ticket 18: the note-link idempotency check is anchored — the target
+    name must be followed by a link terminator (``]``, ``|`` alias, ``#``
+    subpath), so a link whose target merely *starts with*
+    ``<slug>.atlasmap`` (``-old``, plural) does not count and the real
+    embed line is still appended; the plain/alias/subpath shapes that do
+    count still gain no second line."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_text=note_text)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    expected = note_text if carries else note_text + "![[demo.atlasmap]]\n"
+    assert note.read_text(encoding="utf-8") == expected
+
+
 # --- the write path end to end ----------------------------------------------------
 
 
