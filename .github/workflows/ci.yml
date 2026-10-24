@@ -5,40 +5,52 @@ on:
     branches: [main, master]
   pull_request:
 
+# A push while a run is in flight cancels the superseded run instead of
+# queueing a duplicate (ticket 13).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   fast-tier:
-    # The fast test tier: the smoke suite + the skip-marked discipline
-    # names. The integration tier (golden-file tests) needs the
-    # human-captured fixtures/golden-<version>/ and stays local.
+    # There is one tier: the whole suite. The golden-file tests (README
+    # §7.1) ride in it on the committed fixtures/golden-<version>/
+    # captures — nothing is deselected, so CI's golden coverage is by
+    # design, not accident (ticket 13). `run-tests.py --all` is the
+    # explicit integration-only runner of README §8's churn procedure;
+    # it adds a fixture check, not a dependency CI lacks.
     #
     # Matrix: this is a Windows-first Python repo (the campaign generator
     # it serves runs on Windows; path handling must be proven there), so
-    # at least one Windows leg must run.
+    # at least one Windows leg must run. 3.10 is the requires-python
+    # floor (kept until it moves); 3.13 proves a modern interpreter
+    # against the lock's wheels.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.10", "3.13"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install test dependencies (pinned)
-        # pytest matches the uv.lock dev group (keep in sync when the
-        # lock moves) — a floating install could go green on a
-        # combination never tested locally.
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyyaml pytest==9.1.1
+      - name: Check the lock against pyproject.toml
+        # Lock drift — a dependency edited without re-locking — is a red
+        # build here, not a local `uv run` surprise later (ticket 13).
+        run: uv lock --check
+
+      - name: Install test dependencies (from the lock)
+        # uv.lock is the one pinned truth for what the tests run on; a
+        # floating install could go green on a combination never tested
+        # locally (ticket 13).
+        run: uv sync --locked
 
       - name: "Lint (runtime-crash class: syntax errors, undefined names)"
-        run: |
-          pip install ruff
-          ruff check src tests run-tests.py
+        run: uv run ruff check src tests run-tests.py
 
-      - name: Fast tier
-        run: python run-tests.py
+      - name: Tests (the whole suite, golden tests included)
+        run: uv run python run-tests.py

@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Run the avtt integration test tiers from the repo root.
+"""Run the avtt test suites from the repo root.
 
-  python run-tests.py          fast tier: the pytest suite (seconds)
-  python run-tests.py --all    fast + integration tiers: adds the
-                               golden-file tests (README §7.1), which
-                               require the pin's captured fixture —
+  python run-tests.py          the gate: the whole pytest suite
+                               (seconds) — the golden-file tests
+                               (README §7.1) run in it too, on the
+                               committed fixtures/golden-<version>/
+                               captures; nothing is deselected
+                               (ticket 13)
+  python run-tests.py --all    the whole suite again, then the
+                               integration-only golden pass
+                               (`-m integration`): the explicit runner
+                               README §8's churn procedure uses. The
+                               pin's golden fixture is required —
                                missing is an error naming the capture
                                command, never a quiet skip (ticket 12)
 
@@ -25,13 +32,16 @@ ROOT = Path(__file__).resolve().parent
 
 GOLDEN_VERSION_ENV = "AVTT_GOLDEN_VERSION"
 
+# The gate's suite: plain `pytest tests -q` — the whole suite, golden
+# tests included; they are never deselected (ticket 13).
 FAST_SUITES = [
     ("avtt", [sys.executable, "-m", "pytest", "tests", "-q"]),
 ]
 
 INTEGRATION_SUITES = [
-    # The golden-file tests, marked `-m integration` (README §7.1): the
-    # --all tier runs them as their own suite. They require the golden
+    # The golden-file tests, marked `-m integration` (README §7.1):
+    # --all runs them again as their own explicit suite — the isolated
+    # pass README §8's procedure reads. They require the golden
     # fixture of the version under test (the pin's, or the
     # AVTT_GOLDEN_VERSION override's) — checked before the suite runs.
     ("avtt-golden", [sys.executable, "-m", "pytest", "tests",
@@ -73,7 +83,7 @@ def main():
         return 2
 
     suites = list(FAST_SUITES)
-    tier = "fast"
+    tier = "whole suite"
     if all_tiers:
         # The integration tier requires the *pin's own* golden fixture
         # (ticket 12): any committed golden-*/ used to select it, which
@@ -101,8 +111,8 @@ def main():
                   "a pin without its capture is not a pin")
             return 2
         suites += INTEGRATION_SUITES
-        tier = "fast + integration"
-    print(f"run-tests.py: {len(suites)} suite(s), {tier} tier, root {ROOT}")
+        tier = "whole suite + integration"
+    print(f"run-tests.py: {len(suites)} suite(s), {tier}, root {ROOT}")
 
     results = [run_suite(name, cmd) for name, cmd in suites]
 
