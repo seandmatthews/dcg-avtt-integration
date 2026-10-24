@@ -33,12 +33,18 @@ step either blocks or invites fabrication.
 
 ## Proposal
 
-1. Derive `ROOT` from the workflow's own location instead of a literal:
-   the saved workflows live in `<repo>/.zcode/workflows/`, so the repo
-   root is two levels up from the running script's file (the drafts in
-   `.zcode/workflow-drafts/` use the same shape). Same for `WT_BASE`:
-   default to `<repo-parent>/dcg-avtt-wt` (sibling of the repo,
-   matching the current layout) rather than an absolute string.
+1. Derive `ROOT` from the environment instead of a literal. Mechanism
+   hint (added 2026-10-24, from the implementer runs' observed behavior):
+   the dynamic-workflows `world.run` executes with its cwd at the
+   *workspace* — the repo root this run was started from — so
+   `git rev-parse --show-toplevel` (no `-C`) yields `ROOT` at runtime;
+   deriving from the script file's own path may not be possible inside
+   the facade (the running script lives in a session draft directory,
+   not necessarily in the repo). `WT_BASE` then derives from `ROOT`'s
+   parent: `<ROOT-parent>/dcg-avtt-wt` (sibling of the repo, matching
+   the current layout). If the implementer finds a cleaner mechanism
+   the facade supports, land it — the criterion is no hardcoded
+   per-user path, not a specific derivation.
 2. The forge's grounding step checks the sibling exists before reading
    it; when absent it grounds only in-repo claims and says so in its
    output (a stranger's forge run must not fabricate grounding for a
