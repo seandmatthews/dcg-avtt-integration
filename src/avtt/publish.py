@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -77,9 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 def campaign_system(campaign: Path) -> str | None:
     """The campaign's ``system:`` — the pinned read contract (README §5.2,
-    core ticket 48): ``str(value).strip().lower()`` for a string; None for
+    core ticket 48): ``value.strip().lower()`` for a string; None for
     missing, empty, or a non-string scalar (YAML parses ``system: 5`` as an
-    int). Contract rule 4 forbids importing the core's
+    int). Verified once against the core (ticket 18): its
+    ``spine.campaign_system`` (dnd-campaign-generator studio/spine.py,
+    string-only guard before the same strip/lower) requires a string too —
+    neither side coerces. Contract rule 4 forbids importing the core's
     ``spine.campaign_system``, so this line IS the shared definition;
     neither side may drift.
 
@@ -294,12 +298,17 @@ def _record_state(path: Path, intended: dict) -> str:
 
 def _note_has_line(site: _Site, stem: str) -> bool:
     """Whether the companion note already carries a link to this scene's
-    ``.atlasmap`` — any link shape (plain, embed, alias, subpath)."""
+    ``.atlasmap`` — any link shape (plain, embed, alias, subpath). The
+    target name must be followed by a link terminator — ``]`` (plain),
+    ``|`` (alias) or ``#`` (subpath) — so a link to a *different* file
+    whose name merely starts with this one's (``[[demo.atlasmap-old]]``)
+    does not count and the real embed still gets appended (ticket 18)."""
     try:
         text = site.note_path.read_text(encoding="utf-8")
     except OSError:
         return False
-    return f"[[{stem}{_ATLASMAP_SUFFIX}" in text
+    target = re.escape(f"{stem}{_ATLASMAP_SUFFIX}")
+    return re.search(rf"\[\[{target}[\]|#]", text) is not None
 
 
 def _plan_states(plan: _SitePlan, cfg: config.AvttConfig) -> list[tuple[str, Path, str, object]]:

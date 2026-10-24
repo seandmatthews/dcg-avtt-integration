@@ -388,6 +388,8 @@ repo reads its plugin manifest at `<campaign>/.obsidian/…` and writes its
 `atlas-vtt/` at the campaign's top level — so a campaign nested inside a
 larger vault always takes this path, and when there is no `.obsidian/`
 under the campaign the degrade message says so in plain words (ticket 17).
+An `_inbox/` copy is the DM's to drag in or delete — a later pinned
+publish neither reads nor cleans up stale inbox copies (ticket 18).
 
 CLI: `uv run src/avtt/publish.py <campaign> scenes [--site <slug>] [--force] [--dry-run]`
 (`--dry-run` prints the exact file plan and the first divergence from what
@@ -406,9 +408,12 @@ uv run src/avtt/publish.py <campaign> presets [--pack icrpg]
 
 **The gate (read contract, pinned — ticket 48):** `--pack` applies only
 when the campaign's `campaign.yaml` declares a matching
-`system:`. Read as `str(value).strip().lower()` — the exact semantics of
-the core's `spine.campaign_system` (contract rule 4 forbids importing it,
-so this line IS the shared definition; neither side may drift). Missing or
+`system:`. Read as `value.strip().lower()` for a string, None for
+missing, empty, or a non-string scalar (`system: 5` parses as an int) —
+the exact semantics of the core's `spine.campaign_system` (verified
+string-only on both sides, ticket 18; contract rule 4 forbids importing
+it, so this line IS the shared definition; neither side may drift).
+Missing or
 non-matching → refuse with "set `system: <system>` in
 `campaign.yaml`" — never write a pack into a campaign that did not ask
 for it. (Writing `campaign.yaml` itself stays forbidden: contract rule 1.)
