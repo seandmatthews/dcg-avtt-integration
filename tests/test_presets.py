@@ -348,6 +348,277 @@ def test_repaired_values_are_refused_not_repaired_silently():
         assert any(fragment in failure for failure in failures), (preset, failures)
 
 
+# --- ticket 14: one named case group per _validate_* function ---------------
+#
+# README §7.5 promises the port is "tested against deliberately-broken
+# presets (must be refused before Atlas ever sees them)", because an
+# invalid preset that reaches Atlas is silently ignored — a knob the DM
+# believes is live but is not (src/avtt/presets.py, the strictness
+# docstring). Each group below maps one _validate_* function's refusal
+# branches to deliberately-broken cases asserting the refusal message,
+# and pins the strictness contract's other side — "never rejects
+# anything Atlas would accept verbatim" — with accepted rows for the
+# two-sided rules.
+
+
+def check_case(changes: dict, fragment: str | None, refused: bool) -> None:
+    """Plant ``changes`` in ``valid_preset()`` and validate.
+
+    A refused case must produce at least one failure naming ``fragment``;
+    an accepted case (fragment None) must pass with no failures at all.
+    """
+    failures = presets.validate_preset(broken(valid_preset(), **changes))
+    if refused:
+        assert failures, "a deliberately-broken preset passed the validator"
+        assert any(fragment in failure for failure in failures), failures
+    else:
+        assert failures == [], failures
+
+
+def grid_defaults(**fields) -> dict:
+    """A ``rules.gridDefaults`` change: the valid base, fields overridden."""
+    return {"rules.gridDefaults": {"unitType": "feet", "unitDistance": 5,
+                                   "measurementMode": "metric", **fields}}
+
+
+@pytest.mark.parametrize("changes, fragment, refused", [
+    # coneAngle — the whole rule went untested before ticket 14
+    (grid_defaults(coneAngle=0), "coneAngle 0 is not a number in (0, 360]", True),
+    (grid_defaults(coneAngle=361), "coneAngle 361 is not a number in (0, 360]", True),
+    (grid_defaults(coneAngle=-45), "coneAngle -45", True),
+    (grid_defaults(coneAngle="wide"), "coneAngle 'wide'", True),
+    # abstractRangeBands: not a list / a band that is not {name, maxSquares ≥ 1}
+    (grid_defaults(abstractRangeBands="close"),
+     "abstractRangeBands is not a list", True),
+    (grid_defaults(abstractRangeBands=[{"name": "Close"}]), "abstractRangeBands[0]", True),
+    (grid_defaults(abstractRangeBands=[{"maxSquares": 3}]), "abstractRangeBands[0]", True),
+    (grid_defaults(abstractRangeBands=[{"name": "Close", "maxSquares": 1.5}]),
+     "abstractRangeBands[0]", True),
+    # the accept-as-written side
+    (grid_defaults(coneAngle=90), None, False),
+    (grid_defaults(coneAngle=360), None, False),  # the inclusive upper boundary
+    (grid_defaults(abstractRangeBands=[{"name": "Close", "maxSquares": 1},
+                                       {"name": "Far", "maxSquares": 6}]),
+     None, False),
+])
+def test_grid_defaults_rules(changes, fragment, refused):
+    """``_validate_grid_defaults``: coneAngle, abstractRangeBands."""
+    check_case(changes, fragment, refused)
+
+
+def good_light(**fields) -> dict:
+    """A light preset Atlas accepts: id, name, a dim radius above 0."""
+    return {"id": "l", "name": "L", "dim": 30, **fields}
+
+
+def light_presets(*lights) -> dict:
+    return {"rules.lightPresets": list(lights)}
+
+
+@pytest.mark.parametrize("changes, fragment, refused", [
+    ({"rules.lightPresets": "torch"}, "lightPresets is not a list", True),
+    (light_presets(good_light(), good_light(name="Second")),
+     "repeats an earlier light", True),
+    (light_presets(good_light(unit="leagues")), "unit 'leagues' is not one of", True),
+    (light_presets(good_light(animation="flicker")),
+     "animation 'flicker' is not one of", True),
+    (light_presets(good_light(kind="gaslight")), "kind 'gaslight' is not one of", True),
+    (light_presets(good_light(intensity="bright")),
+     "intensity 'bright' is not a number", True),
+    (light_presets(good_light(intensity=2.5)), "intensity 2.5 is outside 0–2", True),
+    (light_presets(good_light(intensity=-0.5)), "intensity -0.5 is outside 0–2", True),
+    (light_presets(good_light(priority="first")),
+     "priority 'first' is not a number", True),
+    # the accept-as-written side: every optional knob at once, plus the
+    # inclusive intensity boundaries (0 and 2 are both in)
+    (light_presets(good_light(unit="feet", animation="pulse", kind="lantern",
+                              intensity=2, priority=3)), None, False),
+    (light_presets(good_light(intensity=0)), None, False),
+])
+def test_light_preset_rules(changes, fragment, refused):
+    """``_validate_light_presets``: unit, animation, kind, intensity,
+    priority, duplicate id, not-a-list."""
+    check_case(changes, fragment, refused)
+
+
+def good_sense(**fields) -> dict:
+    """A sense Atlas accepts: a non-blank id (not 'sight') and name."""
+    return {"id": "t-infra", "name": "Infravision", **fields}
+
+
+def senses_list(*senses) -> dict:
+    return {"rules.senses": list(senses)}
+
+
+@pytest.mark.parametrize("changes, fragment, refused", [
+    ({"rules.senses": "sight"}, "senses is not a list", True),
+    (senses_list("ghost"), "is not an object", True),
+    (senses_list({"id": "", "name": "Blank"}), "id is missing or blank", True),
+    (senses_list({"id": "t-no-name"}), "name is missing or blank", True),
+    (senses_list(good_sense(), good_sense(name="Again")),
+     "repeats an earlier sense", True),
+    (senses_list(good_sense(description=5)), "description is not a string", True),
+    (senses_list(good_sense(sees={"bright": "dazzling"})),
+     "sees.bright 'dazzling' is not one of", True),
+    (senses_list(good_sense(sees={"dim": "pitch"})), "sees.dim", True),
+    (senses_list(good_sense(sees={"dark": "vivid"})), "sees.dark", True),
+    (senses_list(good_sense(sees={"magicalDark": True})), "sees.magicalDark", True),
+    (senses_list(good_sense(look="infrared")), "look 'infrared' is not one of", True),
+    (senses_list(good_sense(reveals="all", lineOfSight=False)),
+     "reveals 'all' with lineOfSight false", True),
+    (senses_list(good_sense(range="conditional")),
+     "range 'conditional' is not one of", True),
+    (senses_list(good_sense(defaultRange=0)),
+     "defaultRange 0 is not a number above 0", True),
+    (senses_list(good_sense(defaultRange=-5)), "defaultRange -5", True),
+    (senses_list(good_sense(ignores="ethereal")), "ignores 'ethereal'", True),
+    (senses_list(good_sense(role="echolocation")),
+     "role 'echolocation' is not one of", True),
+    (senses_list(good_sense(role="darkvision"),
+                 good_sense(id="t-feel", name="Feel", role="darkvision")),
+     "role 'darkvision' is already given", True),
+    (senses_list({"id": "t-see-invisible", "name": "See the Unseen",
+                  "grants": "see-invisible", "sees": {"bright": "normal"}}),
+     "keeps only id, name and description", True),
+    # the accept-as-written side: a valid see-invisible modifier keeps
+    # exactly id, name, description; a fully-dressed regular sense passes
+    # every vocabulary; 'creatures' with lineOfSight false is legal —
+    # only reveals 'all' + false is the silent reset
+    (senses_list({"id": "t-see-invisible", "name": "See the Unseen",
+                  "grants": "see-invisible",
+                  "description": "Sees invisible creatures"}), None, False),
+    (senses_list(good_sense(sees={"bright": "normal", "dim": "as-bright",
+                                  "dark": "as-dim", "magicalDark": "as-bright"},
+                            look="heat", reveals="all", lineOfSight=True,
+                            range="optional", defaultRange=30,
+                            ignores="airborne", role="tremorsense")),
+     None, False),
+    (senses_list(good_sense(reveals="creatures", lineOfSight=False)), None, False),
+])
+def test_sense_rules(changes, fragment, refused):
+    """``_validate_senses``: the sight vocabularies, look, the
+    reveals/lineOfSight pair, range, defaultRange, ignores, roles,
+    duplicate id and role, description, not-a-list, and the
+    see-invisible modifier's keys-ignored rule."""
+    check_case(changes, fragment, refused)
+
+
+def good_resource(**fields) -> dict:
+    """A resource Atlas accepts: key/name/field, a direction, #rrggbb."""
+    return {"key": "ammo", "name": "Ammo", "field": "ammo",
+            "direction": "drains", "color": "#b45309", **fields}
+
+
+def resources_list(*resources) -> dict:
+    return {"rules.resources": list(resources)}
+
+
+def seven_resources() -> dict:
+    """One good resource past the cap Atlas keeps."""
+    return {"rules.resources": [{"key": f"k{i}", "name": f"R{i}", "field": f"f{i}",
+                                 "direction": "drains", "color": "#b45309"}
+                                for i in range(presets.MAX_RESOURCES + 1)]}
+
+
+@pytest.mark.parametrize("changes, fragment, refused", [
+    ({"rules.resources": "hp"}, "resources is not a list", True),
+    (resources_list(good_resource(slot=6)), "slot 6 is not a whole number 0–5", True),
+    (resources_list(good_resource(slot=-1)), "slot -1", True),
+    (resources_list(good_resource(slot=1.5)), "slot 1.5", True),
+    (resources_list(good_resource(direction="static", defeatedWhenSpent=True)),
+     "sets defeatedWhenSpent on a 'static' resource", True),
+    (seven_resources(), "lists 7 resources — Atlas keeps at most 6", True),
+    # the accept-as-written side: slots inside 0–5 (both ends included),
+    # and the defeated flag on a direction that can actually be spent
+    (resources_list(good_resource(slot=0)), None, False),
+    (resources_list(good_resource(slot=5)), None, False),
+    (resources_list(good_resource(defeatedWhenSpent=True)), None, False),
+])
+def test_resource_rules(changes, fragment, refused):
+    """``_validate_resources``: slot bounds, defeatedWhenSpent on static,
+    the six-resource cap, not-a-list."""
+    check_case(changes, fragment, refused)
+
+
+def good_widget(**fields) -> dict:
+    """A counter widget Atlas accepts: id, label, numeric value."""
+    return {"id": "w", "label": "W", "value": 0, "type": "counter", **fields}
+
+
+def widgets_list(*widgets) -> dict:
+    return {"rules.widgets": list(widgets)}
+
+
+@pytest.mark.parametrize("changes, fragment, refused", [
+    ({"rules.widgets": "w"}, "widgets is not a list", True),
+    (widgets_list(good_widget(order="first")), "order 'first' is not a number", True),
+    (widgets_list(good_widget(color=7)), "color is not a string", True),
+    # a counter whose min/max are not numbers is not usable at all
+    (widgets_list(good_widget(min="zero")), "not a usable counter", True),
+    (widgets_list(good_widget(max=True)), "not a usable counter", True),
+    # the accept-as-written side: any-number order (negative too), a
+    # string color, numeric bounds
+    (widgets_list(good_widget(order=0)), None, False),
+    (widgets_list(good_widget(order=-2, color="#334155", min=0, max=10)),
+     None, False),
+])
+def test_widget_rules(changes, fragment, refused):
+    """``_validate_widgets``: order, color, not-a-list, counter min/max."""
+    check_case(changes, fragment, refused)
+
+
+def vision_defaults(defaults, senses=None) -> dict:
+    """A ``rules.defaultTokenVision`` change, optionally planting the
+    preset's own ``rules.senses`` list (the section's known-sense set)."""
+    changes = {"rules.defaultTokenVision": defaults}
+    if senses is not None:
+        changes["rules.senses"] = senses
+    return changes
+
+
+@pytest.mark.parametrize("changes, fragment, refused", [
+    (vision_defaults("sight"), "defaultTokenVision is not an object", True),
+    (vision_defaults({"angle": 0.5}), "angle 0.5 is below 1", True),
+    (vision_defaults({"angle": 0}),
+     "a vision cone is a positive number below 360", True),
+    (vision_defaults({"angle": 360}), "angle 360", True),
+    (vision_defaults({"senses": "darkvision"}),
+     "defaultTokenVision.senses is not a list", True),
+    (vision_defaults({"senses": [{"name": "No id"}]}), "has no usable id", True),
+    (vision_defaults({"senses": [{"id": "darkvision", "range": 6},
+                                 {"id": "darkvision", "range": 3}]}),
+     "repeats an earlier entry", True),
+    # 't-echo' is neither a generic sense nor defined by the preset...
+    (vision_defaults({"senses": [{"id": "t-echo", "range": 6}]}),
+     "names sense 't-echo', which this preset does not define", True),
+    # ...and a senses list in the preset narrows the known set to itself
+    (vision_defaults({"senses": [{"id": "darkvision", "range": 6}]},
+                     senses=[{"id": "t-infra", "name": "Infravision"}]),
+     "names sense 'darkvision'", True),
+    (vision_defaults({"senses": [{"id": "darkvision", "range": 0}]}),
+     "senses[0].range 0 is not a number above 0", True),
+    (vision_defaults({}), "sets nothing Atlas would use", True),
+    (vision_defaults({"senses": []}), "sets nothing Atlas would use", True),
+    (vision_defaults({"senses": [], "tremorsense": 30}),
+     "tremorsense is ignored because a senses list is present", True),
+    # the accept-as-written side: angle ≥ 1 (the 1 floor, and just under
+    # the 360 top), a generic sense used by id, a preset-defined sense
+    # used by id
+    (vision_defaults({"angle": 1}), None, False),
+    (vision_defaults({"angle": 359}), None, False),
+    (vision_defaults({"range": 30, "angle": 90}), None, False),
+    (vision_defaults({"senses": [{"id": "darkvision", "range": 6}]}), None, False),
+    (vision_defaults({"senses": [{"id": "t-infra", "range": 5}]},
+                     senses=[{"id": "t-infra", "name": "Infravision"}]),
+     None, False),
+])
+def test_vision_default_rules(changes, fragment, refused):
+    """``_validate_vision_defaults``: the angle floor, the senses list
+    (unknown, duplicate and zero-range entries, not-a-list), the
+    sets-nothing refusal, and the list-replaces-legacy-fields rule."""
+    check_case(changes, fragment, refused)
+
+
 def test_valid_rich_preset_passes_clean():
     """A preset exercising every optional section, all inside Atlas's limits."""
     preset = valid_preset()
@@ -775,16 +1046,13 @@ def test_unknown_pack_is_refused(tmp_path, capsys):
     assert "no pack 'nosuch'" in out
 
 
-def test_invalid_pack_is_refused_before_validation(tmp_path, capsys):
+def test_invalid_pack_is_refused_before_validation(tmp_path, capsys, monkeypatch):
     """A broken pack never reaches a disk write (no atlas-vtt/ at all)."""
     (tmp_path / "campaign.yaml").write_text("system: icrpg\n", encoding="utf-8")
-    real = presets.pack_preset_path
-    presets.pack_preset_path = lambda pack: tmp_path / "bad-pack.json"
-    try:
-        (tmp_path / "bad-pack.json").write_text(json.dumps({"id": "builtin:x"}))
-        rc = publish.main([str(tmp_path), "presets"])
-    finally:
-        presets.pack_preset_path = real
+    bad_pack = tmp_path / "bad-pack.json"
+    bad_pack.write_text(json.dumps({"id": "builtin:x"}), encoding="utf-8")
+    monkeypatch.setattr(presets, "pack_preset_path", lambda pack: bad_pack)
+    rc = publish.main([str(tmp_path), "presets"])
     out = capsys.readouterr().out
     assert rc == 2
     assert "would not survive Atlas's own loader" in out

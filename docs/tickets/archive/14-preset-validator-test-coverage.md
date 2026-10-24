@@ -1,6 +1,8 @@
 # 14 — broken-preset tests for every ported validator rule
 
-**Status:** proposed
+**Status:** completed (implemented + reviewer sign-off 2026-10-24; this
+flip and the `archive/` move are folded into the branch's single commit
+by amending — pre-amend hash `c54c107`)
 **Priority:** P2 — the validator is the only thing standing between a
 pack and Atlas's silent ignore, and about a third of its rules can be
 deleted without a red test
@@ -69,19 +71,68 @@ finding for its own change, recorded in Implementation notes.)
 
 ## Acceptance criteria
 
-- [ ] Every refusal branch listed in Problem has a deliberately-broken
+- [x] Every refusal branch listed in Problem has a deliberately-broken
       test case asserting its refusal — pinned by the new parametrized
       cases in `tests/test_presets.py` (one named case group per
       `_validate_*` function; checkable by reading the parametrize
       tables against the branch list).
-- [ ] The accept-as-written side is pinned for the two-sided rules
+- [x] The accept-as-written side is pinned for the two-sided rules
       (`see-invisible` modifier, in-range `slot`, valid `coneAngle`,
       angle ≥ 1) — same tables.
-- [ ] The hand monkeypatch is gone — `tests/test_presets.py` uses the
+- [x] The hand monkeypatch is gone — `tests/test_presets.py` uses the
       `monkeypatch` fixture (checkable by reading).
-- [ ] `python run-tests.py` green with the new cases (recorded in
+- [x] `python run-tests.py` green with the new cases (recorded in
       Implementation notes).
 
-## Implementation notes (YYYY-MM-DD)
+## Implementation notes (2026-10-24)
 
-_lands here when the status flips._
+What landed, all in `tests/test_presets.py` — no product-code change,
+as scoped:
+
+- Six parametrized case groups, one per `_validate_*` function named in
+  the Proposal, each row a `(changes, refusal-fragment, refused)` triple
+  over `valid_preset()` via the existing `broken()` helper:
+  `test_grid_defaults_rules`, `test_light_preset_rules`,
+  `test_sense_rules`, `test_resource_rules`, `test_widget_rules`,
+  `test_vision_default_rules` (78 new rows; the file collects 136 cases,
+  was 58). Refuse rows assert a fragment of the exact refusal message;
+  a shared `check_case` helper asserts a refused row fails *naming* its
+  fragment and an accepted row passes with zero failures.
+- The two-sided rules got both directions in the same tables: a valid
+  `see-invisible` modifier (id/name/description only) vs. one carrying a
+  sight key; `slot` 0 and 5 vs. 6/-1/1.5; `coneAngle` 90 and the
+  inclusive 360 vs. 0/361/-45/"wide"; `defaultTokenVision.angle` 1 and
+  359 vs. 0.5/0/360; plus intensity 0/2 vs. 2.5/-0.5 and
+  `defeatedWhenSpent` on `drains` vs. `static`.
+- Bonus rows for same-function branches the Problem list did not name
+  but which had no broken case either: senses entry not-an-object /
+  missing id / missing name / unknown `role`; vision section
+  not-an-object, entry without a usable id, senses not-a-list.
+- Each refusal row was verified to trip the *intended* branch, not just
+  any failure: every changes-dict was run through
+  `presets.validate_preset` and the full failure messages dumped and
+  read against the branch (all 78 rows matched, no surprises).
+- Ride-along done: the hand-rolled `presets.pack_preset_path = lambda …`
+  under try/finally in `test_invalid_pack_is_refused_before_validation`
+  is replaced with the `monkeypatch` fixture.
+- No port bug surfaced: every branch behaves exactly as its message
+  claims.
+
+Gates (run 2026-10-24 in the worktree, before the reviewer re-run):
+
+- `python -m uv --directory <worktree> tool run ruff check src tests run-tests.py`
+  → "All checks passed!"
+- `python -m uv --directory <worktree> run python run-tests.py` →
+  avtt PASS: 247 passed, 1 skipped in ~2s (the skip is pre-existing:
+  `tests/test_scenes.py:428`, the genuinely-optional second golden
+  capture).
+- `python -m uv --directory <worktree> run python run-tests.py --all` →
+  avtt PASS + avtt-golden PASS (1 passed, 1 skipped, 246 deselected).
+
+Landed as the branch's single commit (pre-amend hash `c54c107`); the
+reviewer's sign-off on 2026-10-24 accepts it, and this flip plus the
+`archive/` move are folded into that commit by amending. Deviations
+from the proposal: none beyond the bonus rows documented above (same
+file, same sitting, per the Proposal's own scope line). Every
+acceptance criterion is proven by a run recorded here — nothing is
+left for a human.
