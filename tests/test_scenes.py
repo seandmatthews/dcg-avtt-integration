@@ -657,6 +657,37 @@ def test_degrade_is_unknown_detection_too(tmp_path, capsys):
     assert (campaign / "atlas-vtt" / "_inbox" / "demo.uvtt").is_file()
 
 
+def test_degrade_message_names_vault_root_when_no_obsidian_dir(tmp_path, capsys):
+    """Ticket 17: with no .obsidian/ under the campaign at all, the layout —
+    not a missing manifest — is the problem: the tool assumes the campaign
+    directory *is* the Obsidian vault root (README §5.1), so a nested
+    campaign degrades on every run. The degrade says so in plain words,
+    on top of the usual mismatch line, and the _inbox/ copy still happens."""
+    campaign = make_campaign(tmp_path)  # no .obsidian anywhere
+    assert publish.main([str(campaign), "scenes"]) == 0
+    out = capsys.readouterr().out
+    assert f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected=unknown" in out
+    assert "no .obsidian/" in out
+    assert "campaign directory is the Obsidian vault root" in out
+    assert (campaign / "atlas-vtt" / "_inbox" / "demo.uvtt").is_file()
+
+
+def test_degrade_keeps_todays_message_when_obsidian_dir_exists(tmp_path, capsys):
+    """Ticket 17: the plain-words vault-root message is for "no .obsidian/ at
+    all" — a vault that HAS .obsidian/ but an unreadable plugin manifest is
+    a different problem (a broken plugin install) and keeps today's
+    unknown-mismatch behavior and message unchanged."""
+    campaign = make_campaign(tmp_path)
+    plugin_dir = campaign / ".obsidian" / "plugins" / "atlas-vtt"
+    plugin_dir.mkdir(parents=True)
+    (plugin_dir / "manifest.json").write_text("not json at all", encoding="utf-8")
+    assert publish.main([str(campaign), "scenes"]) == 0
+    out = capsys.readouterr().out
+    assert f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected=unknown" in out
+    assert "vault root" not in out
+    assert (campaign / "atlas-vtt" / "_inbox" / "demo.uvtt").is_file()
+
+
 def test_degrade_is_idempotent_and_refuses_on_diff(tmp_path, capsys):
     campaign = make_campaign(tmp_path, manifest="9.9.9")  # not the pin, at any pin
     assert publish.main([str(campaign), "scenes"]) == 0

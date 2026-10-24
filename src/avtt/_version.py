@@ -18,6 +18,12 @@ Detection reads the vault's *Obsidian plugin config*, never
 ``atlas-vtt/`` state: contract rule 1 allows reading the campaign
 directory and rule 2 keeps table state out of reach, and a plugin
 manifest is neither — it is which Atlas the vault has installed.
+
+Both the read (``MANIFEST_RELPATH``) and every write
+(``<campaign>/atlas-vtt/``) presume the campaign directory **is** the
+Obsidian vault root — the stated assumption behind ticket 17 (README
+§5.1). A campaign nested inside a larger vault has no manifest here to
+find, and detection honestly reports ``"unknown"``.
 """
 
 from __future__ import annotations
@@ -29,7 +35,8 @@ VERSION = "0.4.0"  # mirrors pyproject.toml [project] version — keep in step
 ATLAS_PIN = "0.9.1"  # the pinned-release table, README §7
 
 PLUGIN_ID = "atlas-vtt"
-MANIFEST_RELPATH = Path(".obsidian") / "plugins" / PLUGIN_ID / "manifest.json"
+OBSIDIAN_DIR = Path(".obsidian")  # the vault-root marker (README §5.1)
+MANIFEST_RELPATH = OBSIDIAN_DIR / "plugins" / PLUGIN_ID / "manifest.json"
 
 
 def detect_atlas_version(campaign: Path) -> str:

@@ -383,7 +383,11 @@ from the pin (`ATLAS_PIN`, §7) → `scenes` refuses to write `.atlasmap`
 files and instead drops the `.uvtt` into `atlas-vtt/_inbox/` with a printed
 instruction ("drag it into Atlas; walls, doors and lights come along").
 The interchange-format path always works; the adapter path is what needs
-the test.
+the test. The campaign directory must be the Obsidian vault root — this
+repo reads its plugin manifest at `<campaign>/.obsidian/…` and writes its
+`atlas-vtt/` at the campaign's top level — so a campaign nested inside a
+larger vault always takes this path, and when there is no `.obsidian/`
+under the campaign the degrade message says so in plain words (ticket 17).
 
 CLI: `uv run src/avtt/publish.py <campaign> scenes [--site <slug>] [--force] [--dry-run]`
 (`--dry-run` prints the exact file plan and the first divergence from what
