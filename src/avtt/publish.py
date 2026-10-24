@@ -446,8 +446,20 @@ def _run_scenes_degraded(campaign: Path, sites: list[_Site], dry_run: bool,
     Atlas, so no ``.atlasmap`` is written — the ``.uvtt`` drops into
     ``atlas-vtt/_inbox/`` for a hand drag-in. The interchange format
     always works; the adapter is what needs the test. Rule 3 still
-    holds in the inbox: an existing copy refuses on diff."""
+    holds in the inbox: an existing copy refuses on diff.
+
+    Ticket 17: when detection came back ``unknown`` because there is no
+    ``.obsidian/`` under the campaign at all, the real problem is the
+    layout, not a manifest — the campaign directory must *be* the
+    Obsidian vault root (README §5.1) — and the degrade says so in
+    plain words before the usual lines. A vault that *has* ``.obsidian/``
+    but an unreadable manifest keeps the plain mismatch message.
+    """
     print(f"atlas-pin-mismatch: pin={_version.ATLAS_PIN} detected={detected}")
+    if detected == "unknown" and not (campaign / _version.OBSIDIAN_DIR).is_dir():
+        print(f"no {_version.OBSIDIAN_DIR.as_posix()}/ under {campaign} — scenes "
+              "assumes the campaign directory is the Obsidian vault root; a "
+              "nested campaign cannot publish scenes")
     print("scenes: this vault does not run the pinned Atlas — writing no "
           ".atlasmap files (scene content is where schema drift bites)")
     inbox = campaign / "atlas-vtt" / _INBOX_DIRNAME
