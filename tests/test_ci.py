@@ -34,6 +34,20 @@ def _run_lines() -> list[str]:
 # --- CI installs from the lock, and proves it --------------------------------
 
 
+def test_ci_lint_covers_tools():
+    """The lint step names tools/ (ticket 21): capture-golden.py is §8's
+    only human-free step and runs only at pin bumps, so a syntax error
+    landing between bumps must be a red build, not invisible bit-rot."""
+    lint = [line for line in _run_lines() if "ruff check" in line]
+    assert lint, "CI must have a ruff check step"
+    for line in lint:
+        assert re.search(r"\bruff\s+check\b.*\btools\b", line), \
+            f"the lint step stopped covering tools/ (ticket 21): {line}"
+    runner = (ROOT / "run-tests.py").read_text(encoding="utf-8")
+    assert '"tools"' in runner, \
+        "run-tests.py's lint suite must lint tools/ too (ticket 21)"
+
+
 def test_ci_installs_from_the_lock():
     """`uv sync --locked` is the install and `uv lock --check` guards
     drift; no floating `pip install` of pyyaml/ruff remains — the

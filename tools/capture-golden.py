@@ -13,9 +13,13 @@ Usage (from the repo root; needs the `websocket-client` wheel):
     uv run --with websocket-client tools/capture-golden.py 0.7.1
 
 Requires Obsidian (desktop) installed at %LOCALAPPDATA%/Programs/obsidian.
-Kills only the Obsidian processes it started (matched on the throwaway
-user-data-dir); leaves everything else alone. With --keep the instance stays
-up for debugging; kill it via the printed hint.
+Refuses to launch when the DevTools port is already taken: the capture
+drives whatever answers on it, so a foreign listener there (e.g. the
+owner's own Obsidian started with remote debugging) would get clicked
+instead of the throwaway instance. Kills only the Obsidian processes it
+started (matched on the throwaway user-data-dir); leaves everything else
+alone. With --keep the instance stays up for debugging; kill it via the
+printed hint.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -49,6 +54,28 @@ def cdp_kill_our_obsidian() -> None:
     subprocess.run(
         ["powershell", "-NoProfile", "-Command", ps], check=False, capture_output=True
     )
+
+
+def cdp_port_taken(port: int) -> bool:
+    """True when something already answers on the port.
+
+    A connect probe, not a bind probe: this runs right after
+    cdp_kill_our_obsidian(), and on Windows a just-killed listener can
+    leave sockets in TIME_WAIT that still block a plain bind — a connect
+    to a dead port is refused, so it fires only on a live listener.
+    That is exactly the collision that matters: the launched Chromium
+    binds its devtools server on 127.0.0.1 too, so anything answering
+    there now would receive the clicks meant for the throwaway
+    instance. Unreachable-but-not-refused (timeout and friends) also
+    counts as taken — refusing is never destructive, proceeding might
+    be.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(1.0)
+        try:
+            return s.connect_ex(("127.0.0.1", port)) == 0
+        except OSError:
+            return True
 
 
 def clear_vault_dir(vault: Path) -> None:
@@ -265,6 +292,20 @@ def main() -> int:
 
     cdp_kill_our_obsidian()
     time.sleep(3)  # let the killed instance's renderers drop their handles
+
+    if cdp_port_taken(CDP_PORT):
+        print(
+            f"port {CDP_PORT} is already taken — refusing to launch anything.\n"
+            "The capture clicks whatever answers on that DevTools port, and\n"
+            "nothing distinguishes it from the instance this tool starts, so\n"
+            "a foreign listener there (most likely your own Obsidian or\n"
+            "another Chromium/Electron app started with remote debugging)\n"
+            "would be driven in your real vault. Close whatever holds port\n"
+            f"{CDP_PORT} and re-run.",
+            file=sys.stderr,
+        )
+        return 2
+
     print(f"building vault for Atlas {version}")
     vault = build_vault(version)
 

@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
 """Run the avtt test suites from the repo root.
 
-  python run-tests.py          the gate: the whole pytest suite
-                               (seconds) — the golden-file tests
-                               (README §7.1) run in it too, on the
-                               committed fixtures/golden-<version>/
-                               captures; nothing is deselected
-                               (ticket 13)
-  python run-tests.py --all    the whole suite again, then the
-                               integration-only golden pass
-                               (`-m integration`): the explicit runner
+  python run-tests.py          the gate: the lint suite first (ruff over
+                               everything Python the repo carries —
+                               src, tests, this runner, tools/), then
+                               the whole pytest suite (seconds) — the
+                               golden-file tests (README §7.1) run in
+                               it too, on the committed
+                               fixtures/golden-<version>/ captures;
+                               nothing is deselected (ticket 13)
+  python run-tests.py --all    the same again, then the integration-only
+                               golden pass (`-m integration`): the explicit runner
                                README §8's churn procedure uses. The
                                pin's golden fixture is required —
                                missing is an error naming the capture
                                command, never a quiet skip (ticket 12)
+
+The lint suite needs the dev group's ruff; every supported invocation
+(`uv run python run-tests.py`, CI's `uv sync --locked`) installs it from
+the lock. With a bare interpreter that has pytest but no ruff, the lint
+suite fails loudly — it never skips (the tools/ step of ticket 21 exists
+because a gate member that only runs at pin bumps rots invisibly).
 
 Stdlib only. Every subprocess is list-form args — nothing ever goes
 through a shell (the family rule, kept from the campaign generator,
@@ -31,6 +38,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 GOLDEN_VERSION_ENV = "AVTT_GOLDEN_VERSION"
+
+# The lint suite: the runtime-crash class (syntax errors, undefined
+# names, unused imports/variables — pyproject.toml's ruff select) over
+# everything Python the repo carries. tools/ rides here since ticket 21:
+# tools/capture-golden.py is §8's only human-free step and runs only at
+# pin bumps, so a syntax error there would otherwise land with every
+# other gate green.
+LINT_SUITES = [
+    ("ruff", [sys.executable, "-m", "ruff", "check", "src", "tests",
+              "run-tests.py", "tools"]),
+]
 
 # The gate's suite: plain `pytest tests -q` — the whole suite, golden
 # tests included; they are never deselected (ticket 13).
@@ -82,8 +100,8 @@ def main():
         print(f"usage: python run-tests.py [--all]  (unknown args: {unknown})")
         return 2
 
-    suites = list(FAST_SUITES)
-    tier = "whole suite"
+    suites = LINT_SUITES + list(FAST_SUITES)
+    tier = "lint + whole suite"
     if all_tiers:
         # The integration tier requires the *pin's own* golden fixture
         # (ticket 12): any committed golden-*/ used to select it, which
@@ -111,7 +129,7 @@ def main():
                   "a pin without its capture is not a pin")
             return 2
         suites += INTEGRATION_SUITES
-        tier = "whole suite + integration"
+        tier = "lint + whole suite + integration"
     print(f"run-tests.py: {len(suites)} suite(s), {tier}, root {ROOT}")
 
     results = [run_suite(name, cmd) for name, cmd in suites]
