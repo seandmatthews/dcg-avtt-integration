@@ -1,6 +1,6 @@
 # 15 — scenes-side test gaps: the note on refusal, limit boundaries, WebP/JPEG, the lit golden
 
-**Status:** proposed
+**Status:** completed
 **Priority:** P2 — four small gaps in README §7's delivered claims, none
 of which today's suite can catch
 **Area:** `tests/test_scenes.py`, `fixtures/` (two tiny new `.uvtt`
@@ -71,26 +71,68 @@ Four independent gaps, all in the scenes lane:
 
 ## Acceptance criteria
 
-- [ ] Every refusal test leaves the companion note byte-identical —
+- [x] Every refusal test leaves the companion note byte-identical —
       pinned by the shared assertion in
       `tests/test_scenes.py::test_refusals_write_nothing`,
       `::test_refusal_of_a_150mb_file_writes_nothing`,
       `::test_incomplete_site_is_refused`, and the multi-site
       partial-refusal test.
-- [ ] Exactly-at-limit files pass and one-past files refuse for the six
+- [x] Exactly-at-limit files pass and one-past files refuse for the six
       §3.3 limits — pinned by new boundary cases in the refusal tables
       (`tests/test_scenes.py`).
-- [ ] A VP8L-WebP `.uvtt` and a JPEG `.uvtt` convert end-to-end green —
+- [x] A VP8L-WebP `.uvtt` and a JPEG `.uvtt` convert end-to-end green —
       pinned by new tests over `fixtures/sample-webp.uvtt` and
       `fixtures/sample-jpeg.uvtt` (names final at implementation);
       `fixtures/README.md` carries their design rows.
-- [ ] `sample-lit.atlasmap` captured at the pin and
+- [x] `sample-lit.atlasmap` captured at the pin and
       `test_golden_file_lit_variant` runs (not skips) via
       `python run-tests.py --all` — or the honest-wording fallback is
       landed in README §7.1 + fixtures/README.md with the deviation
       recorded here (checkable either way).
-- [ ] `python run-tests.py` (and `--all` if the capture landed) green.
+- [x] `python run-tests.py` (and `--all` if the capture landed) green.
 
-## Implementation notes (YYYY-MM-DD)
+## Implementation notes (2026-10-24)
 
-_lands here when the status flips._
+Landed as the branch's single `test(15)` commit on
+`feature/15-scenes-test-gaps` (this commit — the status flip and the
+archive move amend it). All five criteria proved green in the
+implementer's own runs; the reviewer signed off 2026-10-24.
+
+- **The capture tool did not support the second capture yet.** The
+  ticket said it did; it hard-coded `sample.uvtt`. `--fixture` is added
+  (`tools/capture-golden.py`): the vault copies the named fixture and
+  the drop script reads it; the captured `.atlasmap` takes the fixture's
+  stem. The lit capture landed the same session:
+  `python -m uv run --with websocket-client python tools/capture-golden.py
+  0.9.1 --fixture sample-lit.uvtt` →
+  `fixtures/golden-0.9.1/sample-lit.atlasmap` (ambient 0.26, lights not
+  hidden, no non-import state keys; isolated instance stopped, port 9223
+  free afterwards). The real app's import matches the port's luma branch
+  — `test_golden_file_lit_variant` runs and passes.
+- **The 150 MB exactly-at case is monkeypatched, as the ticket allows:**
+  `FILE_BYTES_LIMIT` is patched to 1 MiB and the file padded to exactly
+  the limit with JSON whitespace. That pins the `>` comparison at its
+  boundary without building and parsing 150 MB of JSON; the real
+  constant and its one-past refuse stay with the existing 150 MB test.
+  Documented in the test's docstring.
+- **Wall-segment boundaries count every source together** (lines +
+  outlines + portals share one budget), so the exactly-at case carries
+  the one 20,000-segment line and empties the rest; one-past is 20,001.
+- **The new image fixtures are header skeletons**, not decodable
+  pixels — there is no WebP/JPEG encoder on the stdlib and the pipeline
+  reads image headers only (README §4; the scene background is the site
+  PNG). They still walk the real publish path and must produce a scene
+  byte-identical to the PNG sample's (same design, same geometry).
+  fixtures/README.md says exactly this in their rows.
+- **Boundary images are header-only PNGs** for the same reason — the
+  16384 × 16384 exactly-at case would otherwise be a quarter-gigabyte
+  of pixels nothing decodes.
+- **Observed, not changed:** the companion-note append rewrites the file
+  through Python text mode, so on Windows the note's on-disk line
+  endings become CRLF (content preserved; every note test compares
+  through the same translation). Refused notes are never rewritten —
+  that is the byte-identical pin. Changing the append's byte fidelity
+  is not this ticket's; noting it here for a future one.
+- Gates: ruff clean; `run-tests.py` and `run-tests.py --all` green
+  (82+ passed, 0 skipped in the scenes file; the integration tier ran
+  both golden tests).

@@ -12,6 +12,13 @@ Usage (from the repo root; needs the `websocket-client` wheel):
 
     uv run --with websocket-client tools/capture-golden.py 0.7.1
 
+Pass --fixture to import another designed fixture instead: the captured
+file is named after the fixture's stem (ticket 15's optional lit capture:
+
+    uv run --with websocket-client tools/capture-golden.py 0.9.1 --fixture sample-lit.uvtt
+
+lands fixtures/golden-<version>/sample-lit.atlasmap).
+
 Requires Obsidian (desktop) installed at %LOCALAPPDATA%/Programs/obsidian.
 Refuses to launch when the DevTools port is already taken: the capture
 drives whatever answers on it, so a foreign listener there (e.g. the
@@ -41,7 +48,6 @@ REPO = Path(__file__).resolve().parent.parent
 CDP_PORT = 9223
 CAP_DIR = Path(tempfile.gettempdir()) / "avtt-golden-capture"
 OBSIDIAN_EXE = Path.home() / "AppData/Local/Programs/obsidian/Obsidian.exe"
-SAMPLE = REPO / "fixtures" / "sample.uvtt"
 
 
 def cdp_kill_our_obsidian() -> None:
@@ -93,13 +99,13 @@ def clear_vault_dir(vault: Path) -> None:
             time.sleep(2)
 
 
-def build_vault(version: str) -> Path:
+def build_vault(version: str, fixture_path: Path) -> Path:
     vault = CAP_DIR / f"vault-{version.replace('.', '-')}"
     clear_vault_dir(vault)
     plugin = vault / ".obsidian" / "plugins" / "atlas-vtt"
     plugin.mkdir(parents=True)
     (vault / "Maps").mkdir()
-    shutil.copy2(SAMPLE, vault / "Maps" / "sample.uvtt")
+    shutil.copy2(fixture_path, vault / "Maps" / fixture_path.name)
     for name in ("main.js", "manifest.json", "styles.css"):
         url = (
             "https://github.com/atlas-vtt/atlas-vtt/releases/download/"
@@ -223,9 +229,9 @@ def act_open_manager(page: Page) -> None:
     )
 
 
-def act_maps_tab_and_drop(page: Page) -> str:
-    result = page.eval(
-        """(async () => {
+# The drop script, parameterized by the free variable `goldenFile` (the
+# fixture's file name, injected by the wrapper in act_maps_tab_and_drop).
+_DROP_JS = """(async () => {
   const log = [];
   try {
     // The import auto-opens the finished scene via `leaf.openFile`; the opened
@@ -251,8 +257,8 @@ def act_maps_tab_and_drop(page: Page) -> str:
     .find(b => /^Maps/.test(b.innerText.trim()));
   if (tab) { tab.click(); log.push('maps tab'); }
   await new Promise(r => setTimeout(r, 800));
-  const buf = await app.vault.adapter.readBinary('Maps/sample.uvtt');
-  const file = new File([buf], 'sample.uvtt');
+  const buf = await app.vault.adapter.readBinary('Maps/' + goldenFile);
+  const file = new File([buf], goldenFile);
   const dt = new DataTransfer();
   dt.items.add(file);
   const target = document.querySelector('.atlas-asset-manager-container');
@@ -260,16 +266,20 @@ def act_maps_tab_and_drop(page: Page) -> str:
   target.dispatchEvent(new DragEvent('drop', {bubbles: true, cancelable: true, dataTransfer: dt}));
   log.push('drop dispatched');
   return JSON.stringify({log, dropped: true, size: buf.byteLength});
-})()""",
-        await_promise=True,
-    )
+})()"""
+
+
+def act_maps_tab_and_drop(page: Page, fixture_name: str) -> str:
+    wrapped = ("(function(){ const goldenFile = %s; return (%s)(); })()"
+               % (json.dumps(fixture_name), _DROP_JS))
+    result = page.eval(wrapped, await_promise=True)
     print(f"  drop step: {result}")
     return str(result)
 
 
-def wait_for_scene(vault: Path, deadline: float) -> Path | None:
+def wait_for_scene(vault: Path, deadline: float, stem: str) -> Path | None:
     while time.time() < deadline:
-        hits = list(vault.glob("atlas-vtt/collections/*/scenes/sample.atlasmap"))
+        hits = list(vault.glob(f"atlas-vtt/collections/*/scenes/{stem}.atlasmap"))
         if hits:
             return hits[0]
         time.sleep(1.5)
@@ -279,15 +289,21 @@ def wait_for_scene(vault: Path, deadline: float) -> Path | None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("version", help="Atlas release tag to capture, e.g. 0.7.1")
+    ap.add_argument("--fixture", default="sample.uvtt",
+                    help="fixture .uvtt under fixtures/ to import; the captured "
+                         ".atlasmap is named after its stem (default: sample.uvtt)")
     ap.add_argument("--keep", action="store_true", help="leave Obsidian running")
     args = ap.parse_args()
     version = args.version
+    fixture_name = args.fixture
+    fixture_path = REPO / "fixtures" / fixture_name
+    stem = fixture_path.stem
 
     if not OBSIDIAN_EXE.exists():
         print(f"Obsidian not found at {OBSIDIAN_EXE}", file=sys.stderr)
         return 2
-    if not SAMPLE.exists():
-        print(f"missing {SAMPLE}", file=sys.stderr)
+    if not fixture_path.exists():
+        print(f"missing {fixture_path}", file=sys.stderr)
         return 2
 
     cdp_kill_our_obsidian()
@@ -307,7 +323,7 @@ def main() -> int:
         return 2
 
     print(f"building vault for Atlas {version}")
-    vault = build_vault(version)
+    vault = build_vault(version, fixture_path)
 
     print("launching isolated Obsidian (owner's instance untouched)")
     subprocess.Popen(
@@ -356,13 +372,13 @@ def main() -> int:
             # import output — `newSceneFile`'s envelope — because that is
             # what §3.3 holds the port to; the patch suppresses only the
             # post-import open, not the import's own write path.
-            act_maps_tab_and_drop(page)
+            act_maps_tab_and_drop(page, fixture_name)
             dropped = True
         else:
             break
         time.sleep(1.5)
 
-    scene = wait_for_scene(vault, time.time() + 60)
+    scene = wait_for_scene(vault, time.time() + 60, stem)
     if scene is None:
         print("no sample.atlasmap appeared in the vault", file=sys.stderr)
         print("vault tree was:", file=sys.stderr)
@@ -375,7 +391,7 @@ def main() -> int:
 
     dest_dir = REPO / "fixtures" / f"golden-{version}"
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / "sample.atlasmap"
+    dest = dest_dir / f"{stem}.atlasmap"
     shutil.copy2(scene, dest)
     envelope = json.loads(dest.read_text(encoding="utf-8"))["state"]
     extra = set(envelope) - {
