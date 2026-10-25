@@ -315,9 +315,10 @@ live number in ICRPG packs stays the preset's hearts resource.
 ```
 dcg-avtt-integration/
   README.md                 this file
-  run-tests.py              the gate: the whole suite, golden tests
-                            included; --all adds the integration-only
-                            golden pass (§8)
+  run-tests.py              the gate: lint (ruff over src, tests, the
+                            runner, tools/) then the whole suite, golden
+                            tests included; --all adds the
+                            integration-only golden pass (§8)
   src/avtt/
     uvtt.py                 .uvtt parsing (fields + limits, plain-words refusals)
     image_headers.py        stdlib PNG/JPEG/WebP dimension readers
@@ -346,6 +347,10 @@ dcg-avtt-integration/
     sample-nonsquare.uvtt   the non-square-cell refusal variant
   tests/                    test_pin, test_presets, test_records,
                             test_scenes, test_smoke
+  tools/
+    capture-golden.py       the golden capture automation (§8 step 2:
+                            drives a throwaway Obsidian instance; refuses
+                            to launch when the DevTools port is taken)
 ```
 
 Python, stdlib-first (the core's old rule, kept here: `PyYAML` allowed for

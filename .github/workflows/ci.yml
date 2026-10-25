@@ -50,7 +50,11 @@ jobs:
         run: uv sync --locked
 
       - name: "Lint (runtime-crash class: syntax errors, undefined names)"
-        run: uv run ruff check src tests run-tests.py
+        # tools/ rides here since ticket 21: capture-golden.py is §8's
+        # only human-free step (it runs unattended at pin bumps), so a
+        # syntax error landing between bumps must be a red build, and
+        # run-tests.py's lint suite lints the same set.
+        run: uv run ruff check src tests run-tests.py tools
 
       - name: Tests (the whole suite, golden tests included)
         run: uv run python run-tests.py
