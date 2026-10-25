@@ -5,3 +5,8 @@
 *.json text
 *.uvtt binary
 *.atlasmap text
+
+# Workflow scripts: the loader YAML-parses their metadata block and its parser
+# does not accept CRLF (required: true reads as the string "true"). Pin LF
+# so merges never rewrite these files through the CRLF checkout filter.
+*.dwf.ts text eol=lf
