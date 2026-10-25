@@ -28,17 +28,39 @@ $ErrorActionPreference = "Stop"
 $lockDir = Join-Path $PSScriptRoot "locks"
 New-Item -ItemType Directory -Force -Path $lockDir | Out-Null
 $lockPath = Join-Path $lockDir "$Name.lock"
-$maxAgeSec = 3600
+# Invariant (ticket 20): the steal age must be strictly less than the longest
+# acquire wait any caller passes (the ticket implementer waits 1800s on "main",
+# avtt-ticket-implementer.dwf.ts) - the two numbers are one contract, not two
+# knobs. If the steal age reached the acquire timeout, a lock left by a crashed
+# run could never be stolen before every waiter gave up; at 1500s a waiter that
+# has waited 25 minutes may steal a lock 25 minutes old. Change them together.
+# (This file stays pure ASCII: powershell.exe 5.1 reads a BOM-less script as
+# ANSI, and a multi-byte char inside a quoted string garbles into a quote and
+# breaks the parse.)
+$maxAgeSec = 1500
 
 function Get-AgeSeconds([string]$p) {
 	# DateTimeOffset.Parse honors the stamp's trailing Z (UTC) regardless of the
-	# machine's timezone — and avoids [System.DateTimeStyles], which this box's
+	# machine's timezone - and avoids [System.DateTimeStyles], which this box's
 	# PowerShell 5.1 refuses to resolve.
 	try {
-		$stamp = [DateTimeOffset]::Parse((Get-Content $p -Raw).Trim())
+		$raw = Get-Content $p -Raw
+	} catch {
+		# Unreadable right now: the creator's FileShare::None write handle is
+		# still open (the window between File::Open and Close). That is a LIVE
+		# holder mid-write, never a crash - read as fresh (0) so it is never
+		# stolen; the next poll reads the finished stamp.
+		return 0
+	}
+	try {
+		$stamp = [DateTimeOffset]::Parse($raw.Trim())
 		return ([DateTimeOffset]::UtcNow - $stamp).TotalSeconds
 	} catch {
-		return 0
+		# Readable but empty/corrupt (ticket 20): the holder crashed between
+		# creating the file and writing the stamp, or the file is garbage.
+		# Reads as infinitely old - stealable immediately. Returning 0 here
+		# (the old behavior) made a corrupt lock permanently unstealable.
+		return [double]::PositiveInfinity
 	}
 }
 
@@ -73,7 +95,12 @@ switch ($Action) {
 	}
 	"status" {
 		if (Test-Path $lockPath) {
-			Write-Output "held (age $([int](Get-AgeSeconds $lockPath))s)"
+			$age = Get-AgeSeconds $lockPath
+			if ([double]::IsInfinity($age)) {
+				Write-Output "held (corrupt stamp - reads as infinitely old, stealable)"
+			} else {
+				Write-Output "held (age $([int]$age)s)"
+			}
 			exit 1
 		}
 		Write-Output "free"

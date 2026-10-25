@@ -6,12 +6,16 @@ description: "Run ONE existing docs/tickets/ ticket end to end: baseline gates
   the ticket to completed, move it to docs/tickets/archive/ in the same change,
   and merge --no-ff into main with the gates re-run (auto-revert on red).
   Concurrency-safe: each run has its own worktree; the shared main checkout is
-  guarded by a cross-run lock (.zcode/tools/checkout-lock.ps1). Adapted from
-  pigeon-simulator's pigeon-ticket-pipeline."
+  guarded by a cross-run lock (.zcode/tools/checkout-lock.ps1), and a per-stem
+  lock keeps two runs of the SAME ticket off one worktree (the same ticket
+  refuses to double-start). Adapted from pigeon-simulator's
+  pigeon-ticket-pipeline."
 whenToUse: When you have ONE concrete ticket (e.g. 04) and want the full
-  implement → review → merge loop run on it. Safe to run several tickets
-  concurrently (per-run worktrees; the main-checkout lock serializes exactly the
-  merge). For turning a new idea into a ticket first, use avtt-ticket-forge.
+  implement → review → merge loop run on it. Safe to run several *different*
+  tickets concurrently (per-run worktrees; the main-checkout lock serializes
+  exactly the merge); the same ticket refuses to double-start — its per-stem
+  lock is held for the whole run (ticket 20). For turning a new idea into a
+  ticket first, use avtt-ticket-forge.
 args:
   reviewRounds:
     type: number
@@ -164,8 +168,12 @@ function runGit(gitArgs: string[], timeoutMs?: number) {
 // every section that touches ROOT — the baseline snapshot, the baseline gates,
 // the merge into main, the post-merge gates, any revert — holds this lock.
 // Acquire timeout 1800s: a held lock means another run's baseline/merge+gates
-// is in progress, so waiting is correct. A lock older than 1 h is stolen by
-// the tool (its holder crashed and can never release).
+// is in progress, so waiting is correct.
+// Invariant (ticket 20): this 1800s wait must stay strictly greater than the
+// tool's steal age ($maxAgeSec = 1500s in checkout-lock.ps1) — steal age
+// strictly less than the longest acquire wait; the two numbers are one
+// contract, not two knobs. The old 1 h steal age sat past this give-up point,
+// so a crashed run's lock burned every waiter's full 30-minute timeout.
 const LOCK_SCRIPT = ROOT + "/.zcode/tools/checkout-lock.ps1";
 async function lockMain(): Promise<boolean> {
   const r = await world.run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", LOCK_SCRIPT, "acquire", "main", "1800"], { timeoutMs: 1830000 });
@@ -173,6 +181,22 @@ async function lockMain(): Promise<boolean> {
 }
 async function unlockMain(): Promise<void> {
   await world.run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", LOCK_SCRIPT, "release", "main"]);
+}
+
+// Per-stem mutex (ticket 20): guards one ticket's worktree and branch for the
+// whole run, from the worktree-setup section to the post-merge cleanup. While
+// it is held, that stem's workspace is owned: a second run of the SAME ticket
+// (same stem → same worktree path) fails fast on acquire instead of running
+// `worktree remove --force` through the first run's active workspace. Runs of
+// different tickets use different stems and never contend here. Short acquire
+// timeout (60s): a held stem lock is a collision to refuse, not a queue to
+// wait in — a crashed holder's lock goes stale and is stolen after 25 min.
+async function lockStem(stem: string): Promise<boolean> {
+  const r = await world.run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", LOCK_SCRIPT, "acquire", "stem-" + stem, "60"], { timeoutMs: 90000 });
+  return r.exitCode === 0;
+}
+async function unlockStem(stem: string): Promise<void> {
+  await world.run("powershell", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", LOCK_SCRIPT, "release", "stem-" + stem]);
 }
 
 // The repo's verification gates, runnable against any checkout (main or a
@@ -328,6 +352,18 @@ WT = WT_BASE + "/" + stem;
 log("ticket " + ticketNum + " \"" + ticketTitle + "\" (" + priority + ") — building on branch " + BRANCH);
 item(ticketNum, "picked-up", ticketPath);
 
+// Stem guard (ticket 20): a same-ticket double-start is refused HERE, before
+// any `worktree remove --force` can reach the other run's active workspace.
+// The lock is held until this run's worktree cleanup (or its flagged exit) —
+// for the whole run, since the workspace is owned the whole run.
+if (!(await lockStem(stem))) {
+  return {
+    conclusion: "Aborted before any work: the per-stem lock stem-" + stem + " is held — another implementer run for this same ticket owns worktree " + WT + ". Refusing to double-start: setup would remove --force the other run's active workspace. Re-run when that run has finished; if it crashed, its lock is stealable once 25 min old, or delete .zcode/tools/locks/stem-" + stem + ".lock by hand if you are sure nothing is running.",
+    findings: [],
+    verified: [],
+    notCovered: ["everything — the per-stem lock was held (this ticket is already running), no work started"],
+  } satisfies WorkflowReport;
+}
 const existing = await runGit(["-C", ROOT, "branch", "--list", BRANCH]);
 if (existing.stdout.trim() !== "") {
   const anc = await runGit(["-C", ROOT, "merge-base", "--is-ancestor", BRANCH, "main"]);
@@ -350,6 +386,7 @@ if (!out.flagged) {
   }
 }
 if (out.flagged) {
+  await unlockStem(stem);
   return {
     conclusion: "FLAGGED before any work: " + out.flagReason,
     findings: [
@@ -527,10 +564,13 @@ if (!out.flagged && flip !== null && flip.status === "done") {
 
 phase("Write the run report");
 if (out.merged) {
+  // Still under the stem lock acquired at setup (ticket 20): the post-merge
+  // cleanup cannot race another run of the same ticket for the same worktree.
   const rm = await runGit(["-C", ROOT, "worktree", "remove", WT]);
   const bd = await runGit(["-C", ROOT, "branch", "-d", BRANCH]);
   log(rm.exitCode === 0 && bd.exitCode === 0 ? "cleaned up worktree and merged branch" : "cleanup incomplete — worktree/branch may remain");
 }
+await unlockStem(stem);
 let md = "# Ticket implementer — \"" + ticketTitle + "\" (" + ticketNum + ")\n\n";
 md += "**Ticket file:** " + ticketPath + " · **Priority:** " + priority + "\n\n";
 md += "**Outcome:** " + (out.merged
