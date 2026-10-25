@@ -44,9 +44,12 @@ file — the golden must stay the pure import output (`newSceneFile`'s
 envelope), because that is what README §3.3 holds the port to. A
 postcondition refuses a capture carrying non-import state keys.
 
-Optionally (same procedure, one more import): commit `sample-lit.atlasmap`
-from the `sample-lit.uvtt` variant — it pins the ambient-luma branch the
-baked sample cannot take (see below).
+The sample capture is the pin's own; the lit variant is captured the
+same way, one more run: `tools/capture-golden.py <version> --fixture
+sample-lit.uvtt` lands `golden-<version>/sample-lit.atlasmap` (ticket
+15). It pins the ambient-luma branch the baked sample cannot take (see
+below), and the pin's directory carries it — `test_golden_file_lit_variant`
+runs there, not skips.
 
 | version | captured | by |
 |---|---|---|
@@ -54,6 +57,7 @@ baked sample cannot take (see below).
 | 0.7.1 | 2026-10-18 | `tools/capture-golden.py 0.7.1` |
 | 0.8.0 | 2026-10-20 | `tools/capture-golden.py 0.8.0` |
 | 0.9.1 | 2026-10-23 | `tools/capture-golden.py 0.9.1` |
+| 0.9.1 (lit) | 2026-10-24 | `tools/capture-golden.py 0.9.1 --fixture sample-lit.uvtt` |
 
 ## `sample.uvtt` — designed, not arbitrary
 
@@ -82,12 +86,22 @@ luma — cannot take both branches, so `sample.uvtt` pins the baked
 branch (with a color present, proving precedence) and:
 
 - `sample-lit.uvtt` — identical except `baked_lighting: false`: the
-  luma branch (`#334455` → 0.26), lights not hidden. Unit-tested; a
-  golden capture of it is the optional second capture above.
+  luma branch (`#334455` → 0.26), lights not hidden. Its golden capture
+  is committed beside the sample's (the lit row below).
 - `sample-nonsquare.uvtt` — `map_size {4,3}` against the same 64×32
   image: the ±2 px height check refuses it ("does not fit a map of
   4 × 3 squares") — the non-square-cell refusal variant the refusal
   test needs.
+- `sample-webp.uvtt` — the sample design with the image swapped for a
+  VP8L (lossless WebP) header skeleton, 64 × 32 (ticket 15): the real
+  publish path must reach `image_headers`' lossless-WebP reader, which
+  no PNG fixture does. The embedded image is a *header skeleton* —
+  signature and dimension bytes, not decodable pixels (there is no
+  WebP encoder on the stdlib) — which is exactly what the pipeline
+  reads: image headers only (README §4); the scene's background is the
+  site PNG, never the embedded bytes.
+- `sample-jpeg.uvtt` — likewise, a JFIF/SOF0 JPEG header skeleton,
+  64 × 32: the JPEG segment walk on the real publish path.
 
 It landed with ticket 05, before the golden capture — the capture is
 only meaningful if the sample exercises everything. The recipe for a

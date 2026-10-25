@@ -107,9 +107,12 @@ def variant_doc(**changes) -> dict:
 def make_campaign(tmp_path: Path, *, manifest: str | None = None,
                   doc=None, avtt_yaml: str | None = None,
                   note_text: str = "Site briefing from the core.\n",
-                  slug: str = "demo") -> Path:
+                  slug: str = "demo", site_png: bytes | None = None) -> Path:
     """A campaign the scenes publisher accepts: campaign.yaml, avtt.yaml,
-    and the complete site triple under maps/sites/<slug>/."""
+    and the complete site triple under maps/sites/<slug>/. ``site_png``
+    overrides the site image's bytes (the boundary tests need geometries
+    the sample PNG does not have; header-only bytes suffice — the
+    pipeline reads image headers only)."""
     tmp_path = Path(tmp_path)
     (tmp_path / "campaign.yaml").write_text("system: icrpg\n", encoding="utf-8")
     (tmp_path / "avtt.yaml").write_text(
@@ -117,7 +120,8 @@ def make_campaign(tmp_path: Path, *, manifest: str | None = None,
         encoding="utf-8")
     site = tmp_path / "maps" / "sites" / slug
     site.mkdir(parents=True)
-    (site / f"{slug}.png").write_bytes(sample_png_bytes())
+    (site / f"{slug}.png").write_bytes(
+        site_png if site_png is not None else sample_png_bytes())
     write_uvtt(site / f"{slug}.uvtt", sample_doc() if doc is None else doc)
     (site / f"{slug}.md").write_text(note_text, encoding="utf-8")
     if manifest is not None:
@@ -130,6 +134,36 @@ def make_campaign(tmp_path: Path, *, manifest: str | None = None,
 
 def collections_dir(campaign: Path) -> Path:
     return Path(campaign) / "atlas-vtt" / "collections" / "demo"
+
+
+def note_bytes(campaign: Path, slug: str = "demo") -> bytes:
+    """The site's companion note, byte for byte. Read before a publish,
+    compare after (ticket 15): a refusal must leave the note untouched —
+    the note is the one write the system makes outside ``atlas-vtt/``
+    (contract rule 1's licensed exception) and the highest-blast-radius
+    write it makes, so every refusal test pins it, not just the
+    ``atlas-vtt/`` tree's absence."""
+    return (Path(campaign) / "maps" / "sites" / slug / f"{slug}.md").read_bytes()
+
+
+def boundary_doc(cells: tuple[int, int], image_px: tuple[int, int], *,
+                 polylines: list | None = None) -> dict:
+    """A minimal valid ``.uvtt`` at an exact geometry: ``cells`` squares
+    spanning ``image_px`` pixels (ticket 15's limit-boundary cases sit the
+    geometry *exactly at* a §3.3 limit). The embedded image is a
+    header-only PNG — enough header for the dimension reader, and the
+    pipeline reads image headers only (README §4): a full 16384 × 16384
+    image would be a quarter-gigabyte of pixels no test ever decodes."""
+    return {
+        "format": 0.2,
+        "resolution": {"map_size": {"x": cells[0], "y": cells[1]},
+                       "map_origin": {"x": 0, "y": 0}},
+        "line_of_sight": polylines or [],
+        "portals": [],
+        "lights": [],
+        "environment": {"baked_lighting": False},
+        "image": base64.b64encode(png(*image_px, header_only=True)).decode("ascii"),
+    }
 
 
 def parse_sample() -> uvtt.UvttDocument:
@@ -485,11 +519,19 @@ def test_round_trip_determinism(tmp_path, capsys):
 
 def _refusal_cases() -> list[tuple[str, object, str]]:
     """(name, uvtt document/text, reason fragment) — every Atlas limit and
-    the field breaks the importer refuses, one per plain-words reason."""
+    the field breaks the importer refuses, one per plain-words reason.
+    The one-past cases of ticket 15 sit exactly one over each countable
+    limit, so an off-by-one on the refuse side ships red."""
     oversized = sample_doc()  # header claims 16385×16384 (> 268,435,456 px), body truncated
     oversized["image"] = base64.b64encode(png(16385, 16384, header_only=True)).decode("ascii")
     tiny = variant_doc(image=base64.b64encode(png(32, 16)).decode("ascii"))  # cellSize 8 < 10
     wall_hog = variant_doc(line_of_sight=[[{"x": 0, "y": 0}] + [{"x": 0, "y": 0}] * 20002])
+    # 20,002 points = 20,001 segments: the first count past 20,000 that must refuse
+    one_past_walls = variant_doc(line_of_sight=[[{"x": x, "y": 0} for x in range(20_002)]],
+                                 objects_line_of_sight=[], portals=[], lights=[])
+    # 39 × 20 over 4 × 2 squares: cellSize 9.75 — fits within the ±2 px
+    # height tolerance yet is under the 10 px-per-cell floor
+    small_cell = boundary_doc((4, 2), (39, 20))
     light_hog = variant_doc(lights=[{"position": {"x": 1, "y": 1}, "range": 1,
                                      "intensity": 1, "color": "#ffffff"}] * 2001)
     bad_range = variant_doc(lights=[{"position": {"x": 1, "y": 1}, "range": -1,
@@ -511,6 +553,7 @@ def _refusal_cases() -> list[tuple[str, object, str]]:
                                  "map_origin": "up and left"}),
          "missing or not a position"),
         ("over-20000-wall-segments", wall_hog, "more than 20,000 wall segments"),
+        ("one-past-20000-wall-segments", one_past_walls, "more than 20,000 wall segments"),
         ("over-2000-lights", light_hog, "more than 2,000 lights"),
         ("light-range-negative", bad_range, "out of range"),
         ("door-without-two-ends", no_ends, "does not have two ends"),
@@ -526,6 +569,7 @@ def _refusal_cases() -> list[tuple[str, object, str]]:
          "could not be read"),
         ("nonsquare-cells", nonsquare, "does not fit a map of 4 × 3 squares"),
         ("grid-too-small", tiny, "too small for its grid"),
+        ("cell-just-under-10-px", small_cell, "too small for its grid"),
         ("nothing-lies-on-image", all_outside,
          "Nothing in the file lies on its map image"),
     ]
@@ -534,19 +578,25 @@ def _refusal_cases() -> list[tuple[str, object, str]]:
 @pytest.mark.parametrize("name,doc,fragment", _refusal_cases(),
                          ids=[case[0] for case in _refusal_cases()])
 def test_refusals_write_nothing(tmp_path, capsys, name, doc, fragment):
-    """§7.3: every limit produces its plain-words reason and the atlas-vtt/
-    tree is untouched."""
+    """§7.3: every limit produces its plain-words reason, the atlas-vtt/
+    tree is untouched, and so is the companion note (ticket 15 — the note
+    is the one write outside atlas-vtt/, contract rule 1)."""
     campaign = make_campaign(tmp_path, doc=doc, manifest=_version.ATLAS_PIN)
+    note_before = note_bytes(campaign)
     atlas = campaign / "atlas-vtt"
     assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 2
     out = capsys.readouterr().out
     assert fragment in out, (name, out)
     assert not atlas.exists(), f"{name}: the refusal wrote into atlas-vtt/"
+    assert note_bytes(campaign) == note_before, \
+        f"{name}: the refusal edited the companion note"
 
 
 def test_refusal_of_a_150mb_file_writes_nothing(tmp_path, capsys):
-    """The file-size limit fires on the byte count, before any parse."""
+    """The file-size limit fires on the byte count, before any parse; the
+    companion note is untouched with the rest (ticket 15)."""
     campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    note_before = note_bytes(campaign)
     uvtt_path = campaign / "maps" / "sites" / "demo" / "demo.uvtt"
     with open(uvtt_path, "wb") as handle:
         handle.write(b"{")
@@ -555,17 +605,21 @@ def test_refusal_of_a_150mb_file_writes_nothing(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "larger than 150 MB" in out
     assert not (campaign / "atlas-vtt").exists()
+    assert note_bytes(campaign) == note_before, "the refusal edited the companion note"
 
 
 def test_incomplete_site_is_refused(tmp_path, capsys):
     """The generator emits png + uvtt + md together; a missing file is
-    reported, not guessed around."""
+    reported, not guessed around; the note that does exist is untouched
+    (ticket 15)."""
     campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    note_before = note_bytes(campaign)
     (campaign / "maps" / "sites" / "demo" / "demo.png").unlink()
     assert publish.main([str(campaign), "scenes"]) == 2
     out = capsys.readouterr().out
     assert "incomplete" in out and "demo.png" in out
     assert not (campaign / "atlas-vtt").exists()
+    assert note_bytes(campaign) == note_before, "the refusal edited the companion note"
 
 
 def test_site_png_disagreeing_with_uvtt_is_refused(tmp_path, capsys):
@@ -626,6 +680,128 @@ def test_bad_config_values_are_refused(tmp_path, capsys, yaml_text, fragment):
     assert publish.main([str(campaign), "scenes"]) == 2
     assert fragment in capsys.readouterr().out
     assert not (campaign / "atlas-vtt").exists()
+
+
+# --- the inclusive limit boundaries (ticket 15) --------------------------------
+#
+# §3.3's limits are `>` comparisons: a file sitting exactly at a limit is
+# accepted, one past it refuses (the refuse side lives in the refusal
+# table above). The exactly-at side is what an off-by-one would break, so
+# each of the six limits gets its file-at-the-limit publish here. The
+# image geometries ride header-only PNGs: the pipeline reads image
+# headers only (README §4), and a full 16384 × 16384 image would be a
+# quarter-gigabyte of pixels no test ever decodes.
+
+
+def test_boundary_exactly_20000_wall_segments_publishes(tmp_path, capsys):
+    """One line of 20,001 points = 20,000 segments — the whole budget, and
+    everything else in the file empty, so the total is exactly the limit."""
+    line = [{"x": x, "y": 0} for x in range(20_001)]
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             doc=variant_doc(line_of_sight=[line],
+                                             objects_line_of_sight=[],
+                                             portals=[], lights=[]))
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 0
+    out = capsys.readouterr().out
+    assert "demo: published" in out and "walls" in out
+    assert (collections_dir(campaign) / "scenes" / "demo.atlasmap").is_file()
+
+
+def test_boundary_exactly_2000_lights_publishes(tmp_path, capsys):
+    """Exactly 2,000 lights is the whole budget: the lights limit refuses
+    only the 2,001st."""
+    lights = [{"position": {"x": 1, "y": 1}, "range": 1,
+               "intensity": 1, "color": "#ffffff"}] * 2_000
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             doc=variant_doc(lights=lights))
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 0
+    out = capsys.readouterr().out
+    assert "demo: published" in out and "2000 lights" in out
+    assert (collections_dir(campaign) / "scenes" / "demo.atlasmap").is_file()
+
+
+def test_boundary_exactly_4096_cells_per_side_publishes(tmp_path):
+    """4,096 squares on a side is the whole budget; with 10 px cells that
+    means a 40,960 × 10 image (the cell-pixels floor is what sizes it)."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             doc=boundary_doc((4_096, 1), (40_960, 10)),
+                             site_png=png(40_960, 10, header_only=True))
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert (collections_dir(campaign) / "scenes" / "demo.atlasmap").is_file()
+
+
+def test_boundary_exactly_10px_per_cell_publishes(tmp_path, capsys):
+    """A cell of exactly 10.0 world pixels is the floor: 40 × 20 px over
+    4 × 2 squares must publish where 9.75 px refuses."""
+    line = [{"x": 0, "y": 0}, {"x": 2, "y": 0}]
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             doc=boundary_doc((4, 2), (40, 20),
+                                              polylines=[line]),
+                             site_png=png(40, 20))
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert "1 wall" in capsys.readouterr().out
+    assert (collections_dir(campaign) / "scenes" / "demo.atlasmap").is_file()
+
+
+def test_boundary_exactly_268435456_image_pixels_publishes(tmp_path):
+    """268,435,456 px (16384 × 16384) is the decode budget exactly: at four
+    bytes a pixel it is the last image size the importer opens."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             doc=boundary_doc((1_024, 1_024), (16_384, 16_384)),
+                             site_png=png(16_384, 16_384, header_only=True))
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert (collections_dir(campaign) / "scenes" / "demo.atlasmap").is_file()
+
+
+def test_boundary_file_of_exactly_the_size_limit_publishes(tmp_path, monkeypatch):
+    """A file of exactly the size limit parses instead of refusing: the
+    check is ``len(data) > FILE_BYTES_LIMIT``. The real 150 MB constant is
+    not rebuilt here — 150 MB of JSON is slow to construct and slow to
+    parse — so the limit is patched to 1 MiB and the file padded to
+    exactly that many bytes with trailing JSON whitespace. That pins the
+    comparison at its boundary; that the constant is 150 MB, and that one
+    byte over it refuses, stay with
+    ``test_refusal_of_a_150mb_file_writes_nothing`` (the unusual
+    construction the ticket asks to have documented)."""
+    limit = 1024 * 1024
+    monkeypatch.setattr(uvtt, "FILE_BYTES_LIMIT", limit)
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN)
+    text = json.dumps(sample_doc())
+    padding = limit - len(text.encode("utf-8"))
+    assert padding > 0
+    uvtt_path = campaign / "maps" / "sites" / "demo" / "demo.uvtt"
+    uvtt_path.write_text(text + " " * padding, encoding="utf-8")
+    assert uvtt_path.stat().st_size == limit
+    assert publish.main([str(campaign), "scenes", "--site", "demo"]) == 0
+    assert (collections_dir(campaign) / "scenes" / "demo.atlasmap").is_file()
+
+
+# --- the non-PNG images inside a real .uvtt (ticket 15) -------------------------
+
+
+@pytest.mark.parametrize("fixture_name,image_type", [
+    ("sample-webp.uvtt", "image/webp"),   # VP8L: the lossless reader, least covered
+    ("sample-jpeg.uvtt", "image/jpeg"),   # the SOF segment walk
+], ids=["webp-vp8l", "jpeg"])
+def test_webp_and_jpeg_uvtt_convert_end_to_end(tmp_path, capsys, fixture_name, image_type):
+    """A ``.uvtt`` whose embedded image is not a PNG walks the real
+    conversion path green (ticket 15): the header readers behind
+    ``dimensions_of_bytes`` are reached by a publish, not only by the
+    unit test above. The variants carry the sample design — same
+    geometry — so the published scene is byte-identical to the PNG
+    sample's, which is what proves the readers agree."""
+    path = FIXTURES / fixture_name
+    document = uvtt.parse(path)
+    assert document.image_type == image_type
+    assert image_headers.dimensions_of_bytes(document.image_bytes) == (64, 32)
+    campaign = make_campaign(
+        tmp_path, manifest=_version.ATLAS_PIN,
+        doc=json.loads(path.read_text(encoding="utf-8")))
+    assert publish.main([str(campaign), "scenes"]) == 0
+    assert "4 walls, 1 door, 1 light" in capsys.readouterr().out
+    atlasmap = collections_dir(campaign) / "scenes" / "demo.atlasmap"
+    assert atlasmap.read_bytes() == scene.dumps(scene.scene_file(
+        convert_sample(), "atlas-vtt/collections/demo/maps/demo.png"))
 
 
 # --- discipline 4: the degrade path ---------------------------------------------
@@ -938,6 +1114,8 @@ def test_multiple_sites_publish_and_partial_refusal(tmp_path, capsys):
     (gamma / "gamma.png").write_bytes(sample_png_bytes())
     write_uvtt(gamma / "gamma.uvtt", variant_doc(image=""))
     (gamma / "gamma.md").write_text("gamma\n", encoding="utf-8")
+    note_bytes_before = {slug: note_bytes(campaign, slug)
+                         for slug in ("demo", "alpha", "beta", "gamma")}
     assert publish.main([str(campaign), "scenes"]) == 2
     out = capsys.readouterr().out
     for slug in ("alpha", "beta", "demo"):
@@ -945,3 +1123,14 @@ def test_multiple_sites_publish_and_partial_refusal(tmp_path, capsys):
     assert "refusing gamma" in out and "holds no map image" in out
     for slug in ("alpha", "beta", "demo"):
         assert (collections_dir(campaign) / "scenes" / f"{slug}.atlasmap").is_file()
+    # the published notes gained exactly their embed line (compared as
+    # text, both sides through universal newlines: the append rewrites
+    # through Python text mode, so on-disk line endings are the
+    # platform's); the refused gamma's note is byte-identical (ticket 15)
+    for slug in ("demo", "alpha", "beta"):
+        note = sites / slug / f"{slug}.md"
+        assert note.read_text(encoding="utf-8") \
+            == note_bytes_before[slug].decode("utf-8").replace("\r\n", "\n") \
+            + f"![[{slug}.atlasmap]]\n", slug
+    assert note_bytes(campaign, "gamma") == note_bytes_before["gamma"], \
+        "the refusal edited gamma's companion note"
