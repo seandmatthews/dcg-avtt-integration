@@ -41,8 +41,33 @@ args:
 // the reviewer's independent evidence is the diff, the code around it, and
 // the tests the acceptance criteria name.
 
-const ROOT = "C:/Users/matth/Documents/dcg-avtt-integration";
-const WT_BASE = "C:/Users/matth/Documents/dcg-avtt-wt";
+// ROOT and WT_BASE are derived, never hardcoded (ticket 19): the run executes
+// with its cwd at the workspace — the repo root the run was started from — so
+// `git rev-parse --show-toplevel` yields ROOT wherever this repo is cloned,
+// and the per-run worktrees hang off ROOT's parent as siblings of the
+// checkout (AGENTS.md: per-run worktrees under ../dcg-avtt-wt/).
+const rootProbe = await world.run("git", ["rev-parse", "--show-toplevel"]);
+const ROOT = rootProbe.exitCode === 0
+  ? rootProbe.stdout.trim().replace(/\\/g, "/")
+  : "";
+if (ROOT === "") {
+  return {
+    conclusion: "Aborted before any work: could not derive the repo root — `git rev-parse --show-toplevel` failed from the workspace (exit " + rootProbe.exitCode + "): " + rootProbe.stderr.trim().slice(0, 200) + ". Start the run from inside the dcg-avtt-integration checkout; ROOT and WT_BASE are derived from it, never hardcoded (ticket 19).",
+    findings: [],
+    verified: [],
+    notCovered: ["everything — the repo root could not be derived, no work started"],
+  } satisfies WorkflowReport;
+}
+const parentSlash = ROOT.lastIndexOf("/");
+if (parentSlash <= 0) {
+  return {
+    conclusion: "Aborted before any work: the derived repo root \"" + ROOT + "\" has no parent directory — the per-run worktrees cannot be placed beside it (ticket 19). Nothing was changed.",
+    findings: [],
+    verified: [],
+    notCovered: ["everything — the worktree base could not be derived, no work started"],
+  } satisfies WorkflowReport;
+}
+const WT_BASE = ROOT.slice(0, parentSlash) + "/dcg-avtt-wt";
 
 const ticketArg = String(args.ticket ?? "").trim().toLowerCase().replace(/\.md$/, "");
 const prefix = /^\d+$/.test(ticketArg) ? ticketArg.padStart(2, "0") + "-" : ticketArg;

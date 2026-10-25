@@ -37,7 +37,21 @@ args:
 // by reading that repo. There is no real-world photo leg in this repo — a
 // file-format adapter has no zebra crossings.
 
-const ROOT = "C:/Users/matth/Documents/dcg-avtt-integration";
+// ROOT is derived, never hardcoded (ticket 19): the run executes with its
+// cwd at the workspace — the repo root the run was started from — so
+// `git rev-parse --show-toplevel` yields ROOT wherever this repo is cloned.
+const rootProbe = await world.run("git", ["rev-parse", "--show-toplevel"]);
+const ROOT = rootProbe.exitCode === 0
+  ? rootProbe.stdout.trim().replace(/\\/g, "/")
+  : "";
+if (ROOT === "") {
+  return {
+    conclusion: "Aborted before any work: could not derive the repo root — `git rev-parse --show-toplevel` failed from the workspace (exit " + rootProbe.exitCode + "): " + rootProbe.stderr.trim().slice(0, 200) + ". Start the run from inside the dcg-avtt-integration checkout; ROOT is derived from it, never hardcoded (ticket 19).",
+    findings: [],
+    verified: [],
+    notCovered: ["everything — the repo root could not be derived, no work started"],
+  } satisfies WorkflowReport;
+}
 const ideaText = String(args.idea ?? "").trim();
 const maxRounds = typeof args.reviewRounds === "number" && args.reviewRounds >= 1 ? Math.floor(args.reviewRounds) : 3;
 
@@ -123,13 +137,28 @@ if (ideaText === "") {
   } satisfies WorkflowReport;
 }
 
+// The campaign-generator grounding leg is conditional (ticket 19): the
+// sibling repo is private and need not exist on this machine, so the script
+// probes it before the writer is ever pointed at it. When it is absent the
+// writer is told to ground only in-repo claims and to name the gap — never
+// to fabricate grounding for a repo it cannot read.
+const CG_DIR = ROOT.slice(0, ROOT.lastIndexOf("/")) + "/dnd-campaign-generator";
+const cgProbe = await world.run("git", ["-C", CG_DIR, "rev-parse", "--show-toplevel"]);
+const cgAvailable = cgProbe.exitCode === 0;
+const cgGrounding = cgAvailable
+  ? "A claim about the campaign generator's files or layouts: read " + CG_DIR + "."
+  : "This machine has NO readable campaign-generator checkout at " + CG_DIR + " (the probe `git -C <dir> rev-parse --show-toplevel` failed), so ground ONLY in-repo claims: make no claim about the campaign generator's files or layouts — what it does becomes something the ticket must establish on a machine that has the repo, named explicitly there as unverified here.";
+if (!cgAvailable) {
+  log("campaign-generator grounding degraded: no readable sibling at " + CG_DIR + " — the writer grounds only in-repo claims and names the gap (ticket 19)");
+}
+
 phase("Draft the ticket from the idea");
 const draft: TicketDraft = await writer.ask<TicketDraft>(
   "Turn the owner's idea into the next ticket in " + ROOT + " (docs only — never touch src/, tests/, packs/, fixtures/).\n\n" +
     "THE IDEA (from the repo's owner): " + ideaText + "\n\n" +
     "1. Read AGENTS.md (law), README.md (the constitution — the ticket must obey its four contract rules and its non-goals §9, and cite sections the way the repo does), and docs/tickets/CONVENTIONS.md (numbering, rules, template).\n" +
     "2. Pick the next free two-digit number: list docs/tickets/*.md AND docs/tickets/archive/*.md, take the highest NN + 1 (numbers are never reused; gaps are fine). Read every open (proposed/in-progress) ticket so you do not duplicate or contradict one; a finding already carried by an open ticket is not a new ticket.\n" +
-    "3. GROUND EVERY CLAIM BEFORE WRITING IT: read the files and README sections the ticket will name, in this repo. A claim about Atlas's behavior must come from the pinned reference source, never from memory: read the clone at %TEMP%\\atlas-vtt (Git Bash: $TEMP/atlas-vtt), first confirming the pin with git -C <clone> describe --tags against the README §7 table; if it is missing, re-clone per AGENTS.md — to $TEMP, never into the repo. A claim about the campaign generator's files or layouts: read ../dnd-campaign-generator. What cannot be verified today is not claimed — it becomes part of what the ticket must establish (that is what spike tickets are for).\n" +
+    "3. GROUND EVERY CLAIM BEFORE WRITING IT: read the files and README sections the ticket will name, in this repo. A claim about Atlas's behavior must come from the pinned reference source, never from memory: read the clone at %TEMP%\\atlas-vtt (Git Bash: $TEMP/atlas-vtt), first confirming the pin with git -C <clone> describe --tags against the README §7 table; if it is missing, re-clone per AGENTS.md — to $TEMP, never into the repo. " + cgGrounding + " What cannot be verified today is not claimed — it becomes part of what the ticket must establish (that is what spike tickets are for).\n" +
     "4. Never invent house-rule values (README §5.2/§6): a pack/preset ticket that needs the owner's table values says the human supplies them and records provenance in packs/icrpg/PACK.md.\n" +
     "5. Write docs/tickets/NN-short-name.md exactly in the CONVENTIONS.md template: **Status:** proposed · **Priority:** P1|P2|P3 · **Area:** files/modules · **Found by:** what surfaced it + today's date (get it from your shell); then ## Problem (self-contained evidence: observed behavior, file:line, reproduction — must still make sense on its own), ## Proposal (enough detail that an agent can implement it without re-deriving the design; call out anything that needs a user ruling rather than deciding it silently), ## Acceptance criteria (each criterion names the test that pins it, or is directly checkable; a spike ticket's criterion is its written-up decision), and the ## Implementation notes placeholder left as-is. This repo has deliberately NO tickets index — do not create or update one.\n" +
     "Return the TicketDraft (content = the full markdown).",
