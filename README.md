@@ -591,6 +591,8 @@ formats does not by itself create obligations; vendoring Atlas source would
    answered by ticket 03 (2026-10-12, source-read at the pin): the verbatim
    refusal text, the threshold (both `uvttCrowding.ts` caps), and a drafted
    plain-words paragraph for the core's ATLAS tutorial live in the archived
-   ticket. Still open there, by hand: carrying that paragraph into the
-   core repo's tutorial (a cross-repo edit) and the optional UI
-   confirmation of the refusal.
+   ticket. The paragraph landed in the core's `ATLAS.md` the same day
+   (core commit `b66bd0f`, 2026-10-12) — the cross-repo criterion is
+   closed (ticket 03's record ticked 2026-10-26); only the optional UI
+   confirmation of the refusal remains open, waiting for an Atlas-UI
+   session.

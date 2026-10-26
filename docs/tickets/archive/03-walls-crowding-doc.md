@@ -32,12 +32,16 @@ it refuses, the DM needs to know what the message means and what to do.
 - [x] The refusal text + threshold are captured in this ticket's
       Implementation notes, tagged to the Atlas version (checkable by
       reading). — 0.6.0, commit `c5a99830`.
-- [ ] The core tutorial's manual-import paragraph carries the
+- [x] The core tutorial's manual-import paragraph carries the
       plain-words explanation (cross-repo; note the edit here). — open
       by design: the edit in the core repo is made by hand; the drafted
       paragraph is below, and a 2026-10-12 grep confirms the tutorial
       does not yet carry it. The reviewer signed off with this left for
-      the human (see "Left for the human").
+      the human (see "Left for the human"). — **closed 2026-10-26**: the
+      paragraph landed in the core's `ATLAS.md` the same day, core
+      commit `b66bd0f` ("carries ticket 03's walls-crowding callout,
+      closing its open cross-repo criterion"), verified in the tutorial
+      at its manual-import section (see the closure note below).
 
 ## Implementation notes (2026-10-12)
 
@@ -159,3 +163,18 @@ change, then tick criterion 2. The optional UI confirmation (proposal
 step 2 — trigger the refusal once with a crowded sample variant) also
 waits for an Atlas-UI session; the source read above stands on its own
 until then.
+
+### Criterion 2 closed (2026-10-26)
+
+Found while preparing to ticket the edit as still-owed: it had already
+happened. Core commit `b66bd0f` (2026-10-12, "the companion's scenes
+publisher landed — ATLAS.md catches up … carries ticket 03's
+walls-crowding callout, closing its open cross-repo criterion") landed
+the drafted paragraph verbatim in `ATLAS.md`'s manual-import section,
+immediately after the always-true drag path — verified by reading the
+tutorial on 2026-10-26 (the blockquote "If Atlas says the walls are too
+crowded.", refusal sentence through the 20,000-segment aside). This
+repo's README §12.3 "still open there" clause was updated in the same
+2026-10-26 change; the optional UI confirmation of the refusal stays
+open, waiting for an Atlas-UI session, and is the ticket's only
+remaining loose end.
