@@ -107,12 +107,16 @@ def variant_doc(**changes) -> dict:
 def make_campaign(tmp_path: Path, *, manifest: str | None = None,
                   doc=None, avtt_yaml: str | None = None,
                   note_text: str = "Site briefing from the core.\n",
+                  note_raw_bytes: bytes | None = None,
                   slug: str = "demo", site_png: bytes | None = None) -> Path:
     """A campaign the scenes publisher accepts: campaign.yaml, avtt.yaml,
     and the complete site triple under maps/sites/<slug>/. ``site_png``
     overrides the site image's bytes (the boundary tests need geometries
     the sample PNG does not have; header-only bytes suffice — the
-    pipeline reads image headers only)."""
+    pipeline reads image headers only). ``note_raw_bytes`` writes the
+    companion note byte for byte (ticket 22's fidelity tests need exact
+    line endings on disk, which ``write_text`` does not give — it
+    translates through os.linesep); it wins over ``note_text``."""
     tmp_path = Path(tmp_path)
     (tmp_path / "campaign.yaml").write_text("system: icrpg\n", encoding="utf-8")
     (tmp_path / "avtt.yaml").write_text(
@@ -123,7 +127,10 @@ def make_campaign(tmp_path: Path, *, manifest: str | None = None,
     (site / f"{slug}.png").write_bytes(
         site_png if site_png is not None else sample_png_bytes())
     write_uvtt(site / f"{slug}.uvtt", sample_doc() if doc is None else doc)
-    (site / f"{slug}.md").write_text(note_text, encoding="utf-8")
+    if note_raw_bytes is not None:
+        (site / f"{slug}.md").write_bytes(note_raw_bytes)
+    else:
+        (site / f"{slug}.md").write_text(note_text, encoding="utf-8")
     if manifest is not None:
         (tmp_path / ".obsidian" / "plugins" / "atlas-vtt").mkdir(parents=True)
         (tmp_path / ".obsidian" / "plugins" / "atlas-vtt" / "manifest.json").write_text(
@@ -938,17 +945,90 @@ def test_dry_run_force_points_at_the_v2_sibling(tmp_path, capsys):
 
 
 def test_companion_note_append_is_idempotent(tmp_path, capsys):
-    original = "Site briefing from the core.\nSecond line.\n"
+    """Ticket 22: the whole comparison is byte level — the fixture note is
+    written as bytes, the assertions read bytes — so a republish that
+    re-encoded the note through text mode could not sneak past."""
+    original = b"Site briefing from the core.\nSecond line.\n"
     campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
-                             note_text=original)
+                             note_raw_bytes=original)
     assert publish.main([str(campaign), "scenes"]) == 0
     note = campaign / "maps" / "sites" / "demo" / "demo.md"
-    after_first = note.read_text(encoding="utf-8")
-    assert after_first == original + "![[demo.atlasmap]]\n"
+    after_first = note.read_bytes()
+    assert after_first == original + b"![[demo.atlasmap]]\n"
 
     assert publish.main([str(campaign), "scenes"]) == 0
     assert "already matches" in capsys.readouterr().out
-    assert note.read_text(encoding="utf-8") == after_first, "republish rewrote the note"
+    assert note.read_bytes() == after_first, "republish rewrote the note"
+
+
+def test_companion_note_append_is_byte_faithful_lf(tmp_path):
+    """Ticket 22: an LF note keeps its bytes verbatim and the embed line
+    lands LF-terminated. Red on Windows before the fix (the append
+    rewrote the note through Python text mode, promoting every LF to
+    CRLF on os.linesep); green after on every CI leg."""
+    raw = b"Site briefing from the core.\nSecond line.\n"
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_raw_bytes=raw)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    assert note.read_bytes() == raw + b"![[demo.atlasmap]]\n"
+
+
+def test_companion_note_append_is_byte_faithful_crlf(tmp_path):
+    """Ticket 22: a CRLF note stays all-CRLF, embed line and terminator
+    included — the pin for the POSIX direction, where the old text-mode
+    append flattened CRLF to LF (a pure-CRLF note round-trips by accident
+    on Windows, so the ubuntu leg is where this red before the fix)."""
+    raw = b"alpha\r\nbeta\r\n"
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_raw_bytes=raw)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    assert note.read_bytes() == raw + b"![[demo.atlasmap]]\r\n"
+
+
+@pytest.mark.parametrize("raw,appended", [
+    pytest.param(b"lf line\nmore lf\nlast\r\n", b"![[demo.atlasmap]]\n",
+                 id="lf-dominant"),
+    pytest.param(b"a\r\nb\r\nc\n", b"![[demo.atlasmap]]\r\n",
+                 id="crlf-dominant"),
+])
+def test_companion_note_mixed_endings_survive_verbatim(tmp_path, raw, appended):
+    """Ticket 22: mixed endings survive byte for byte and the appended
+    line uses the dominant style, by COUNT not mere presence (ties to
+    LF) — one pasted line of the other style must not flip the file."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_raw_bytes=raw)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    assert note.read_bytes() == raw + appended
+
+
+@pytest.mark.parametrize("raw,expected", [
+    pytest.param(b"no trailing newline",
+                 b"no trailing newline\n![[demo.atlasmap]]\n", id="lf-style"),
+    pytest.param(b"alpha\r\nbeta",
+                 b"alpha\r\nbeta\r\n![[demo.atlasmap]]\r\n", id="crlf-style"),
+])
+def test_companion_note_unterminated_gains_its_own_separator(tmp_path, raw, expected):
+    """Ticket 22: a note without a trailing newline gains its separator in
+    the file's own dominant style, so the embed line starts on its own
+    line — both styles pinned."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_raw_bytes=raw)
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    assert note.read_bytes() == expected
+
+
+def test_companion_note_empty_gains_just_the_embed_line(tmp_path):
+    """Ticket 22: a zero-byte note is a legal site (``_site_files`` asks
+    only for existence); it gains just the embed line, LF-terminated."""
+    campaign = make_campaign(tmp_path, manifest=_version.ATLAS_PIN,
+                             note_raw_bytes=b"")
+    assert publish.main([str(campaign), "scenes"]) == 0
+    note = campaign / "maps" / "sites" / "demo" / "demo.md"
+    assert note.read_bytes() == b"![[demo.atlasmap]]\n"
 
 
 def test_companion_note_preserves_content_without_trailing_newline(tmp_path):

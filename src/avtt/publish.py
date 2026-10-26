@@ -337,17 +337,25 @@ def _write_plan(plan: _SitePlan, cfg: config.AvttConfig,
 
     The companion note is the one licensed exception to "writes only
     inside ``atlas-vtt/``" (contract rule 1) and it is append-only:
-    existing note text is kept byte for byte, the embed line is added at
-    the end when it is not already there.
+    existing note text is kept byte for byte (ticket 22 — read and
+    written as bytes, never through text mode, whose universal-newline
+    translation would promote an LF note to CRLF on Windows and flatten
+    a CRLF note to LF on POSIX), and the embed line is added at the end
+    when it is not already there, terminated in the note's own dominant
+    line-ending style (by count, ties to LF — one pasted line of the
+    other style must not flip the file).
     """
     for label, path, state, payload in targets:
         if state == "same":
             continue
         if label == "companion-note link":
-            text = path.read_text(encoding="utf-8") if path.is_file() else ""
-            if text and not text.endswith("\n"):
-                text += "\n"
-            path.write_text(text + str(payload) + "\n", encoding="utf-8")
+            data = path.read_bytes() if path.is_file() else b""
+            ending = (b"\r\n" if data.count(b"\r\n")
+                      > data.count(b"\n") - data.count(b"\r\n") else b"\n")
+            new = data
+            if data and data[-1:] not in (b"\n", b"\r"):
+                new += ending
+            path.write_bytes(new + str(payload).encode("utf-8") + ending)
             continue
         path.parent.mkdir(parents=True, exist_ok=True)
         if isinstance(payload, bytes):

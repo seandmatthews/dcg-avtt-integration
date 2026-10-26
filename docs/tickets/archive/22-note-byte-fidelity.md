@@ -1,6 +1,7 @@
 # 22 — Byte-faithful companion-note append
 
-**Status:** proposed
+**Status:** completed (2026-10-25; implemented on branch
+`feature/22-note-byte-fidelity`, reviewer-signed-off same day)
 **Priority:** P2 — a guarantee the docstring already makes and the code
 breaks on every first publish, on the system's highest-blast-radius write
 **Area:** `src/avtt/publish.py` (`_write_plan`'s companion-note branch),
@@ -149,36 +150,106 @@ be unaffected).
 
 ## Acceptance criteria
 
-- [ ] An LF note publishes with its existing bytes verbatim and
+- [x] An LF note publishes with its existing bytes verbatim and
       `![[<stem>.atlasmap]]\n` appended — pinned by the byte-level LF
       test (suggested
       `tests/test_scenes.py::test_companion_note_append_is_byte_faithful_lf`,
       name final at implementation); red on Windows before the fix
-      (the repro), green after on every CI leg.
-- [ ] A CRLF note stays all-CRLF, embed line and terminator included —
+      (the repro), green after on every CI leg. — [Recorded: the pin
+      was reproduced red on Windows before the fix and is green after
+      on this machine; green-after on the ubuntu legs is CI's to
+      confirm on the merge (see implementation notes) — accepted on
+      the reviewer's 2026-10-25 sign-off.]
+- [x] A CRLF note stays all-CRLF, embed line and terminator included —
       pinned by the byte-level CRLF test (before the fix it would be
       red wherever the ubuntu legs run it, since the flattening
-      direction fires there; green after on every leg).
-- [ ] Mixed endings survive verbatim and the appended line uses the
+      direction fires there; green after on every leg). — [Recorded:
+      pin exists and is green here; its red-before lives on the ubuntu
+      legs by the ticket's own analysis and was not reproducible on
+      Windows — accepted on the reviewer's 2026-10-25 sign-off, with
+      the ubuntu legs' green CI's to confirm on the merge.]
+- [x] Mixed endings survive verbatim and the appended line uses the
       dominant style, both dominances — pinned by the two mixed tests.
-- [ ] A note without a trailing newline gains its separator in the
+- [x] A note without a trailing newline gains its separator in the
       file's own style, both styles — pinned by the two
       no-trailing-newline tests.
-- [ ] An empty note gains just the embed line, LF-terminated — pinned
+- [x] An empty note gains just the embed line, LF-terminated — pinned
       by the empty-note test.
-- [ ] A republish never rewrites the note byte — pinned by
+- [x] A republish never rewrites the note byte — pinned by
       `tests/test_scenes.py::test_companion_note_append_is_idempotent`
       converted to `read_bytes` comparisons.
-- [ ] The refusal and degrade paths stay byte-identical with their
+- [x] The refusal and degrade paths stay byte-identical with their
       existing pins untouched and green —
       `::test_refusals_write_nothing`,
       `::test_refusal_of_a_150mb_file_writes_nothing`,
       `::test_incomplete_site_is_refused`,
       `::test_multiple_sites_publish_and_partial_refusal`, and
       `::test_degrade_path_to_inbox`.
-- [ ] `python run-tests.py` green (lint + whole suite) and
+- [x] `python run-tests.py` green (lint + whole suite) and
       `python run-tests.py --all` green.
 
-## Implementation notes (YYYY-MM-DD)
+## Implementation notes (2026-10-25)
 
-_lands here when the status flips._
+Landed as proposed, with these final details:
+
+- **Code** (`src/avtt/publish.py`, `_write_plan`): the note branch reads
+  `path.read_bytes()` (empty when the note vanished between planning and
+  writing — the old defensive fallback, kept), picks the ending by count
+  (`b"\r\n"` only when CRLF count strictly beats bare-LF count, ties to
+  LF), inserts it as separator only when the note does not already end
+  in `\n` or `\r` (a lone trailing `\r` counts as terminated), and
+  writes everything back with one `write_bytes`. `_note_has_line`,
+  the `"same" | "missing"` plan state, refuse-on-diff and `--dry-run`
+  are untouched. The docstring's byte claim now states the mechanism.
+- **Tests** (`tests/test_scenes.py`): `make_campaign` gained a
+  `note_raw_bytes=` kwarg (`write_bytes` when given; the `write_text`
+  default path is unchanged, so no existing fixture's on-disk endings
+  moved). Final names: `test_companion_note_append_is_byte_faithful_lf`,
+  `test_companion_note_append_is_byte_faithful_crlf`,
+  `test_companion_note_mixed_endings_survive_verbatim[lf-dominant]` /
+  `[crlf-dominant]`,
+  `test_companion_note_unterminated_gains_its_own_separator[lf-style]` /
+  `[crlf-style]`, `test_companion_note_empty_gains_just_the_embed_line`;
+  `test_companion_note_append_is_idempotent` converted to `read_bytes`
+  with its fixture written as bytes. No `read_text` in any of their
+  assertion chains. The link-shape/anchored tests kept their
+  translated-text comparisons (detection, not fidelity); the
+  refusal/degrade byte pins are untouched.
+- **Red-before, recorded 2026-10-25 on Windows** (new byte tests run
+  against the unfixed code): 6 failed, 2 passed — the failures were the
+  LF pin, both mixed params, the unterminated LF param, the empty note
+  and the converted idempotency test; the two passes were the CRLF pins
+  (`byte_faithful_crlf`, `unterminated[crlf-style]`), exactly the
+  ticket's prediction that pure-CRLF round-trips by accident on Windows
+  and their red-before lives on the ubuntu legs.
+- **How it landed (2026-10-25):** reviewer signed off the same day the
+  implementation landed; the branch carries a single commit (amended
+  once, to fold this status flip and the archive move in — the
+  ticket-mandated one-commit shape — so the pre-amend hash is not
+  quotable here; the merge into main records the final one). All eight
+  acceptance criteria are ticked: six on direct local evidence, the LF
+  and CRLF pins' "green after on every CI leg" clause on the
+  reviewer's sign-off — the ubuntu-latest legs of
+  `.github/workflows/ci.yml` were never runnable from this Windows
+  machine, and that confirmation is CI's to make on the merge. That is
+  the one piece of evidence recorded here without a local run behind
+  it; everything else cites a command run on 2026-10-25 (listed below).
+- **Deliberate deviations from the proposal, both small:** the byte
+  tests write their fixtures through a `note_raw_bytes=` kwarg on
+  `make_campaign` rather than overwriting the note after it returns
+  (the ticket allowed either; the kwarg keeps the bytes-path explicit
+  and documented); final test names as listed above. Nothing else
+  moved: `_note_has_line`, plan states, refuse-on-diff, `--dry-run`
+  and the refusal/degrade pins are untouched, as proposed.
+- **Known stale comment, left deliberately:**
+  `test_multiple_sites_publish_and_partial_refusal` still explains its
+  text-mode comparison with "the append rewrites through Python text
+  mode" — true when written, no longer true. The acceptance criterion
+  says that test stays *untouched*, so it was; the comment is wrong
+  about mechanism only, and the comparison itself (through universal
+  newlines) still holds and passes. First editor after the flip may
+  reword it.
+- **Gates run locally (2026-10-25):** `python -m uv tool run ruff check
+  src tests run-tests.py` — all checks passed; `python -m uv run python
+  run-tests.py` — ruff + 289 passed; `python -m uv run python
+  run-tests.py --all` — ruff + 289 + 2 integration, all suites passed.
