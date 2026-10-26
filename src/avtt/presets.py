@@ -56,21 +56,22 @@ PRESET_FILE_FORMAT = 1
 BUILT_IN_ID_PREFIX = "builtin:"
 SYSTEM_PRESETS_DIRNAME = "system-presets"
 
-# The systems Atlas ships at 0.9.1, as ``system:`` slugs: the keys of
+# The systems Atlas ships at 0.10.1, as ``system:`` slugs: the keys of
 # ``builtInPresetId(key)`` = ``builtin:`` + key (``builtInPresets.ts`` and
-# the ``presets/*.ts`` each file names). Re-verified 2026-10-23 against tag
-# 0.9.1 (commit ``5499fd8``) — the same nine files and the same nine keys as
-# at 0.8.0, and ``builtInPresets.ts`` itself unchanged between the tags
-# (ticket 16's source diff; the OSE preset gained only an ``initiative``
-# block — data, not ids). Note the odd spellings are Atlas's own ids:
-# ``coc7e``, ``cyberpunkred``, ``drawsteel``, ``pathfinder2e``.
-BUILTIN_SYSTEMS_0_9_1 = frozenset({
+# the ``presets/*.ts`` each file names). Re-verified 2026-10-26 against tag
+# 0.10.1 (commit ``af9ccc9``) — the same nine files and the same nine keys as
+# at 0.9.1, and ``builtInPresets.ts`` itself unchanged between the tags
+# (ticket 23's source diff; the dnd5e/drawSteel/pathfinder2e presets gained a
+# ``difficultTerrain: 'double'`` grid default — data, not ids). Note the odd
+# spellings are Atlas's own ids: ``coc7e``, ``cyberpunkred``, ``drawsteel``,
+# ``pathfinder2e``.
+BUILTIN_SYSTEMS_0_10_1 = frozenset({
     "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
     "drawsteel", "ose", "pathfinder2e", "shadowdark",
 })
 
 # Display names for the short-circuit message (each preset's ``name``).
-BUILTIN_DISPLAY_NAMES_0_9_1 = {
+BUILTIN_DISPLAY_NAMES_0_10_1 = {
     "cairn": "Cairn",
     "coc7e": "Call of Cthulhu",
     "cyberpunkred": "Cyberpunk RED",
@@ -87,6 +88,10 @@ BUILTIN_DISPLAY_NAMES_0_9_1 = {
 UNIT_TYPES = ("feet", "yards", "meters", "units", "custom")  # presetValidation.ts
 MEASUREMENT_MODES = ("metric", "abstract")
 DIAGONAL_RULES = ("equidistant", "alternating", "euclidean")
+# presetValidation.ts (0.10.1: the new grid-defaults knob — read into
+# parseGridDefaults, written only when it is one of these two; any other
+# value is silently left out of the parsed preset)
+DIFFICULT_TERRAIN_RULES = ("double", "none")
 CONDITION_EFFECTS = ("blinded", "invisible", "airborne", "undetected")  # collectionSettingsTypes.ts
 CRIT_RULES = ("natural", "roll-under", "doubles", "high-total", "none")  # diceRules.ts
 EXPLODE_SCOPES = ("default", "all")
@@ -103,7 +108,8 @@ MAX_INITIATIVE_SIDE_NAME = 40
 # outside it (or a non-number) is silently dropped for the default, 10.
 MIN_INITIATIVE_DECK = 2
 MAX_INITIATIVE_DECK = 50
-LIGHT_ANIMATIONS = ("none", "torch", "candle", "pulse", "magic")  # lightPresetValidation.ts
+LIGHT_ANIMATIONS = ("none", "torch", "candle", "pulse", "magic",
+                    "smoulder")  # lightPresetValidation.ts (0.10.1: 'smoulder')
 LIGHT_UNITS = ("feet", "yards", "meters", "squares")
 LIGHT_KINDS = ("candle", "torch", "lantern", "magical", "darkness", "custom")  # lightPresets.ts
 MAX_INTENSITY = 2  # "the ranges the light popover's sliders give intensity and softness"
@@ -281,6 +287,12 @@ def _validate_grid_defaults(raw, failures: list[str]) -> None:
             _number(raw["coneAngle"]) and 0 < raw["coneAngle"] <= 360):
         failures.append(f"{where}.coneAngle {raw['coneAngle']!r} is not a number in "
                         "(0, 360] — Atlas would silently drop it")
+    if raw.get("difficultTerrain") is not None and not (
+            _is_str(raw["difficultTerrain"])
+            and raw["difficultTerrain"] in DIFFICULT_TERRAIN_RULES):
+        failures.append(f"{where}.difficultTerrain {raw['difficultTerrain']!r} is "
+                        f"not one of {list(DIFFICULT_TERRAIN_RULES)} — Atlas would "
+                        "silently drop it")
     bands = raw.get("abstractRangeBands")
     if bands is None:
         return
