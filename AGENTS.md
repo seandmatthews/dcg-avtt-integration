@@ -53,6 +53,23 @@ and the preset validator are ports (derivative works — README §10), but
 vendored source would change the licensing picture and the churn
 procedure (§8). Cite file paths; do not carry code over.
 
+## Atlas-side e2e: the live sitting this repo owns
+
+The campaign generator's verification (its `docs/WORKFLOW.md`) stops at
+canon — it never touches Obsidian or Atlas. This repo owns the other
+half: occasionally (every few weeks of active work, and before a bundle
+is handed to a real table), run the whole flow through the table
+surface live — publish presets and scenes from a real campaign with the
+CLI, then open the campaign vault in Obsidian desktop with the Atlas
+plugin and verify what only the table can show: doors survive import,
+the preset is picked up, a scene renders with sane ambient, a statblock
+fence links and renders a token.
+
+The Obsidian half is real input on the physical desktop: run it only
+when the machine is free, capture a screenshot per checkpoint, and tick
+the campaign generator's pending ticket boxes with that evidence — the
+human spot-checks the pack instead of doing the clicks.
+
 ## Subprocess discipline
 
 List-form args, explicit `cwd`, never `shell=True` — a rule kept from
