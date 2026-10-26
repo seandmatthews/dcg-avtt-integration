@@ -28,7 +28,12 @@ Capture procedure (per pin):
    0.7.1→0.8.0 source diff touched no import code — ticket 09). 0.9.1
    likewise again: byte-identical to 0.8.0's apart from the timestamped
    asset name — the 0.8.0→0.9.1 diff's only import change is notice
-   text in `runUvttImport.ts`, not the write path (ticket 16).)
+   text in `runUvttImport.ts`, not the write path (ticket 16). 0.10.1
+   likewise again: structurally identical to 0.9.1's apart from the
+   timestamped asset name — the 0.9.1→0.10.1 diff adds only the
+   multi-floor group import (README §3.3), not the single-file write
+   path — and the one byte-level change is the writer's line endings,
+   CRLF → LF (ticket 23).)
 
 Steps 1–3 are automated by `tools/capture-golden.py <version>` (needs
 desktop Obsidian installed; Windows): it builds a throwaway vault,
@@ -58,6 +63,8 @@ runs there, not skips.
 | 0.8.0 | 2026-10-20 | `tools/capture-golden.py 0.8.0` |
 | 0.9.1 | 2026-10-23 | `tools/capture-golden.py 0.9.1` |
 | 0.9.1 (lit) | 2026-10-24 | `tools/capture-golden.py 0.9.1 --fixture sample-lit.uvtt` |
+| 0.10.1 | 2026-10-26 | `tools/capture-golden.py 0.10.1` |
+| 0.10.1 (lit) | 2026-10-26 | `tools/capture-golden.py 0.10.1 --fixture sample-lit.uvtt` |
 
 ## `sample.uvtt` — designed, not arbitrary
 

@@ -31,8 +31,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-VERSION = "0.4.0"  # mirrors pyproject.toml [project] version — keep in step
-ATLAS_PIN = "0.9.1"  # the pinned-release table, README §7
+VERSION = "0.5.0"  # mirrors pyproject.toml [project] version — keep in step
+ATLAS_PIN = "0.10.1"  # the pinned-release table, README §7
 
 PLUGIN_ID = "atlas-vtt"
 OBSIDIAN_DIR = Path(".obsidian")  # the vault-root marker (README §5.1)

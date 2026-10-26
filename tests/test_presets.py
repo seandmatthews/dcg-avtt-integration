@@ -394,15 +394,24 @@ def grid_defaults(**fields) -> dict:
     (grid_defaults(abstractRangeBands=[{"maxSquares": 3}]), "abstractRangeBands[0]", True),
     (grid_defaults(abstractRangeBands=[{"name": "Close", "maxSquares": 1.5}]),
      "abstractRangeBands[0]", True),
+    # difficultTerrain — the 0.10.1 widening (ticket 23): the knob is new,
+    # and Atlas reads only 'double'/'none', silently leaving any other value
+    # out of the parsed preset
+    (grid_defaults(difficultTerrain="triple"), "difficultTerrain 'triple'", True),
+    (grid_defaults(difficultTerrain="Double"), "difficultTerrain 'Double'", True),
+    (grid_defaults(difficultTerrain=2), "difficultTerrain 2", True),
     # the accept-as-written side
     (grid_defaults(coneAngle=90), None, False),
     (grid_defaults(coneAngle=360), None, False),  # the inclusive upper boundary
+    (grid_defaults(difficultTerrain="double"), None, False),
+    (grid_defaults(difficultTerrain="none"), None, False),
     (grid_defaults(abstractRangeBands=[{"name": "Close", "maxSquares": 1},
                                        {"name": "Far", "maxSquares": 6}]),
      None, False),
 ])
 def test_grid_defaults_rules(changes, fragment, refused):
-    """``_validate_grid_defaults``: coneAngle, abstractRangeBands."""
+    """``_validate_grid_defaults``: coneAngle, difficultTerrain,
+    abstractRangeBands."""
     check_case(changes, fragment, refused)
 
 
@@ -430,9 +439,11 @@ def light_presets(*lights) -> dict:
     (light_presets(good_light(priority="first")),
      "priority 'first' is not a number", True),
     # the accept-as-written side: every optional knob at once, plus the
-    # inclusive intensity boundaries (0 and 2 are both in)
+    # inclusive intensity boundaries (0 and 2 are both in) and the 0.10.1
+    # 'smoulder' animation (ticket 23)
     (light_presets(good_light(unit="feet", animation="pulse", kind="lantern",
                               intensity=2, priority=3)), None, False),
+    (light_presets(good_light(animation="smoulder")), None, False),
     (light_presets(good_light(intensity=0)), None, False),
 ])
 def test_light_preset_rules(changes, fragment, refused):
@@ -684,16 +695,16 @@ def test_default_token_vision_legacy_fields_vs_senses_list():
 
 
 def test_builtin_systems_match_the_pinned_release():
-    """The short-circuit set is Atlas's own built-in ids at 0.9.1
+    """The short-circuit set is Atlas's own built-in ids at 0.10.1
     (builtInPresetId keys, builtInPresets.ts + presets/*.ts) — the same
-    nine files and keys as at 0.8.0, ``builtInPresets.ts`` unchanged
-    between the tags, re-verified 2026-10-23 against tag 0.9.1 (commit
-    5499fd8) in ticket 16's source diff."""
-    assert presets.BUILTIN_SYSTEMS_0_9_1 == frozenset({
+    nine files and keys as at 0.9.1, ``builtInPresets.ts`` unchanged
+    between the tags, re-verified 2026-10-26 against tag 0.10.1 (commit
+    af9ccc9) in ticket 23's source diff."""
+    assert presets.BUILTIN_SYSTEMS_0_10_1 == frozenset({
         "cairn", "coc7e", "cyberpunkred", "daggerheart", "dnd5e",
         "drawsteel", "ose", "pathfinder2e", "shadowdark",
     })
-    assert set(presets.BUILTIN_DISPLAY_NAMES_0_9_1) == set(presets.BUILTIN_SYSTEMS_0_9_1)
+    assert set(presets.BUILTIN_DISPLAY_NAMES_0_10_1) == set(presets.BUILTIN_SYSTEMS_0_10_1)
 
 
 def test_shipped_icrpg_pack_validates_clean():
